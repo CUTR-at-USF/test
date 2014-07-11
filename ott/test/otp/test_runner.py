@@ -21,6 +21,7 @@ import socket
 import urllib2
 from mako.template import Template
 
+import ast
 import argparse
 import unittest
 import json
@@ -184,9 +185,9 @@ class OTPVersion(OTPTest):
 		
 		d = json.loads(self.otp_response)
 				
-		t = self.param['major'] == d['serverVersion']['major'] and self.param['minor'] ==  d['serverVersion']['minor']
+		t = int(self.param['major']) == d['serverVersion']['major'] and int(self.param['minor']) ==  d['serverVersion']['minor']
 			
-		self.assertTrue(t, msg="OTP version mismatch - {0} != {1}".format("%d.%d" % (self.param['major'], self.param['minor']), "%d.%d" % (d['serverVersion']['major'], d['serverVersion']['minor'])))
+		self.assertTrue(t, msg="OTP version mismatch - {0} != {1}".format("%d.%d" % (int(self.param['major']), int(self.param['minor'])), "%d.%d" % (d['serverVersion']['major'], d['serverVersion']['minor'])))
 		
 '''			
 class USFGeocoder(OTPTest):
@@ -227,6 +228,37 @@ class USFPlanner(OTPTest):
 		self.url = "routers/default/plan?"
 		self.param = param
 		super(USFPlanner, self).__init__(methodName, param)
+	
+	def run(self, result=None):
+		if 'fromPlace' not in self.param or 'toPlace' not in self.param: self.fail(msg="{0} missing to or from coordinates".format(self.url))
+		
+		if 'date' not in self.param or len(self.param['date']) <= 0:
+			svc = self.param['service'] if 'service' in self.param else None
+			if svc == 'Saturday':
+				self.param['date'] = self.url_service_next_saturday()
+			elif svc == 'Sunday':
+				self.param['date'] = self.url_service_next_sunday()
+			else:
+				self.param['date'] = datetime.datetime.now().strftime("%Y-%m-%d")
+		
+		super(USFPlanner, self).run(result)
+
+	def url_service_next_saturday(self):
+		date = datetime.datetime.now()
+		day = date.weekday()
+		if day == 6:
+			date = date+datetime.timedelta(days=6)
+		else:
+			date = date+datetime.timedelta(days=5-day)
+		date = date.strftime("%Y-%m-%d")
+		return date
+        
+	def url_service_next_sunday(self):
+		date = datetime.datetime.now()
+		day = date.weekday()
+		date = date+datetime.timedelta(days=6-day)
+		date = date.strftime("%Y-%m-%d")
+		return date
 		
 	def test_expected_output(self):
 		if 'expected_output' not in self.param: self.skipTest('suppress')
@@ -292,7 +324,7 @@ class USFPlanner(OTPTest):
 		self.assertEqual(len(regres), 0, msg="OTP returned error #{0}".format(errnum))
 		
 		
-	# XXX optimize, service (saturday/sunday...), time (depart/arrive)
+	# XXX optimize, time (depart/arrive)
 	
 	
 	'''
@@ -323,6 +355,7 @@ class USFPlanner(OTPTest):
 		
 # Route(Test) isValid, (car on walkway, bike rental, walk, drive, etc)
 # RouteBus(Test)  valid # of bullrunner routes used, etc
+# GTFS tests
  
 class USFBikeRental(OTPTest):
 	""" Perform various tests on bike_rental API """	
@@ -342,38 +375,116 @@ class USFBikeRental(OTPTest):
 
 	# XXX - # of stations, at least some have bikes available, stations are within coordinates
 	# contains station
+
 	
-# CMD ARGPARSE
-
-logging.basicConfig(level=logging.WARN)
+# MAIN CODE
 	
-result = unittest.TestResult()
-s = unittest.TestSuite()
+parser = argparse.ArgumentParser(description="OTP Test Suite")
 
-# DISCOVER/LOAD PARAMS FROM CSV
+parser.add_argument('-o', '--otp-url', help="OTP REST Endpoint URL")
+parser.add_argument('-m', '--map-url', help="OTP Map URL")
 
-s.addTests( OTPVersion.add_with_param(OTPVersion, {'major':1, 'minor':0}) )
+parser.add_argument('-t', '--template-path', help="Path to test suite template(s)")
+parser.add_argument('-c', '--csv-path', help="Path to test suite CSV file(s)")
+parser.add_argument('-r', '--report-path', help="Path to write test suite report(s)")
+#parser.add_argument('-b', '--base-dir', help="Base directory for file operations")
 
-s.addTests( USFPlanner.add_with_param(USFPlanner, {'invalid_modes':['CAR'], 'fromPlace':'28.061239833892966%2C-82.41375267505644', 'toPlace':'28.06365404757197%2C-82.41353273391724', 'mode':'BICYCLE', 'maxWalkDistance':'750', 'arriveBy':'false', 'showIntermediateStops':'false', 'date':'07-10-2014', 'time':'2:00pm'} ) )
-# XXX need to add 'service' support and find the next available day/time for otp_params
+parser.add_argument('--date', help="Set date for service tests")
+# XXX
+#parser.add_argument('-s', '--stress', action='store_true', help="Enable stress testing mode (XXX)")
+parser.add_argument('-d', '--debug', action='store_true', help="Enable debug mode")
 
-s.addTests( USFBikeRental.add_with_param(USFBikeRental, {}) ) #{'otp_url':'http://127.0.0.1/otp/'}) )
+parser.set_defaults(
+otp_url=envvar('OTP_URL', 'http://localhost:8080/otp/'), 
+map_url=envvar('OTP_MAP_URL', 'http://localhost:8080/index.html'), 
+template_path=envvar('OTP_TEMPLATE', './templates/good_bad.html'), 
+csv_path=envvar('OTP_CSV_DIR', './suites/'),
+report_path=envvar('OTP_REPORT', './report/otp_report.html'))
 
-s.run(result)
+args = parser.parse_args(sys.argv[1:]) # XXX skip interpreter if given ... works on linux? 
 
-#print s
-print result
+lev = logging.WARN # NOTSET?
+if args.debug: lev = logging.DEBUG
+
+logging.basicConfig(level=lev)
+
+# set base parameters for tests
+p = {'otp_url':args.otp_url}
+if args.date is not None: p['date'] = args.date
+
+# DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
+def find_tests(path, tests):
+	files=os.listdir(path)
+	for f in files:
+		if os.path.isdir(path + "/" + f) and f[0] != '.':			
+			tmp = find_tests(path + "/" + f, [])
+			if len(tmp) > 0: tests += tmp 
+			continue
+			
+		if f.lower().endswith('.csv'):
+			obj = {'file': path + "/" + f, 'result':False, 'suite':False}
+			obj['suite'] = unittest.TestSuite()
+			obj['result'] = unittest.TestResult()
+			
+			cls = path.split('/')[-1]
+			
+			if len(cls) > 0: 
+				for m in globals(): # XXX tests namespace
+					if hasattr(globals()[m], cls) or m == cls:
+						obj['cls'] = globals()[m]
+						tests.append(obj)
+						break
+				
+	return tests
+
+test_suites = find_tests(args.csv_path, [])
+
+# read CSV and add all tests to suite
+for s in test_suites:
+			file = open(s['file'], 'r')
+			reader = csv.DictReader(file)
+			fn = reader.fieldnames
+			for row in reader:
+				row = dict(row.items() + p.items()) # WILL OVERRIDE CSV SETTINGS
+				for k in row:
+					if row[k][0] == '[': row[k] = ast.literal_eval(row[k])
+	
+				s['param'] = row
+				s['suite'].addTests( s['cls'].add_with_param(s['cls'], row ) )
+
+				'''
+				s.addTests( OTPVersion.add_with_param(OTPVersion, {'major':1, 'minor':0}) )
+				s.addTests( USFPlanner.add_with_param(USFPlanner, {'invalid_modes':['CAR'], 'fromPlace':'28.061239833892966%2C-82.41375267505644', 'toPlace':'28.06365404757197%2C-82.41353273391724', 'mode':'BICYCLE', 'maxWalkDistance':'750', 'arriveBy':'false', 'showIntermediateStops':'false'} ) )
+				s.addTests( USFBikeRental.add_with_param(USFBikeRental, {}) ) #{'otp_url':'http://127.0.0.1/otp/'}) )
+				'''
+
+report_data = {}
+
+for s in test_suites:				
+	s['suite'].run(s['result'])
+
+	tests = {'run':s['result'].testsRun, 'skip':len(s['result'].skipped), 'failed':len(s['result'].failures), 'errors':len(s['result'].errors)}
+	for t in s['suite']: 
+		tests[t.id().split('.')[-1]] = {'skipped':[], 'failed':[], 'errors':[]}
+
+	for r in s['result'].errors:		
+		tests[r[0].id().split('.')[-1]]['errors'].append( r[1] ) # strip().split('\n')[-1]
+	
+	for r in s['result'].failures:
+		tests[r[0].id().split('.')[-1]]['failed'].append( r[1] ) # strip().split('\n')[-1]	
+
+	for r in s['result'].skipped:		
+		tests[r[0].id().split('.')[-1]]['skipped'].append( r[1] ) # strip().split('\n')[-1]	
+		
+	report_data[s['file']] = tests
+
+print report_data	
+sys.exit(0)
 
 # REPORT
 
-for r in result.errors:
-	print "%s = %s" % (r[0], r[1].strip().split('\n')[-1])
-	
-for r in result.failures:
-	print "%s = %s" % (r[0], r[1].strip().split('\n')[-1])
+#r = self.report_template.render(test_suites=self.test_suites, test_errors=self.has_errors())
 
-for r in result.skipped:
-	print "%s = %s" % (r[0], r[1].strip().split('\n')[-1])
 	
 sys.exit(0)
 
@@ -807,28 +918,6 @@ def stress(argv):
 
 def main(argv):
 
-	parser = argparse.ArgumentParser(description="OTP Test Suite")
-
-	parser.add_argument('-o', '--otp-url', help="OTP REST Endpoint URL")
-	parser.add_argument('-m', '--map-url', help="OTP Map URL")
-	
-	parser.add_argument('-t', '--template-path', help="Path to test suite template(s)")
-	parser.add_argument('-c', '--csv-path', help="Path to test suite CSV file(s)")
-	parser.add_argument('-r', '--report-path', help="Path to write test suite report(s)")
-	#parser.add_argument('-b', '--base-dir', help="Base directory for file operations")
-	
-	parser.add_argument('--date', help="Set date for service tests")
-	parser.add_argument('-s', '--stress', action='store_true', help="Enable stress testing mode (XXX)")
-	parser.add_argument('-d', '--debug', action='store_true', help="Enable debug mode")
-
-	parser.set_defaults(
-	otp_url=envvar('OTP_URL', 'http://localhost:8080/otp/'), 
-	map_url=envvar('OTP_MAP_URL', 'http://localhost:8080/index.html'), 
-	template_path=envvar('OTP_TEMPLATE', './otpdeployer/templates/good_bad.html'), 
-	csv_path=envvar('OTP_CSV_DIR', './otpdeployer/suites/'),
-	report_path=envvar('OTP_REPORT', './otp/graph/otp_report.html'))
-	
-	args = parser.parse_args(argv[1:]) # XXX [1:] on linux?
 	
 	if args.stress is True:			
 		stress(argv)
