@@ -1,0 +1,2 @@
+invalid_modes,fromPlace,toPlace,mode,maxWalkDistance,arriveBy,showIntermediateStops
+['WALK'],28.061239833892966%2C-82.41375267505644,28.06365404757197%2C-82.41353273391724,BICYCLE,750,false,false
