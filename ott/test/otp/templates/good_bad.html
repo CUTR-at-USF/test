@@ -9,21 +9,24 @@
     <!-- Set the viewport width to device width for mobile -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="" />
-    <title>OtpDeployer: Good/Bad Report</title>
-    <link rel="apple-touch-icon" href="http://maps5.trimet.org/images/ui/trimet.org/tm-logo.png" />
-    <link rel="icon" type="image/ico" href="http://maps5.trimet.org/favicon.ico">
+    <title>OpenTripPlanner Test Results</title>
+	
+    <link rel="apple-touch-icon" href="XXX" />
+    <link rel="icon" type="image/ico" href="XXX">
 
     <!-- Included CSS Files -->
-    <link rel="stylesheet" href="http://maps5.trimet.org/foundation/stylesheets/foundation.css">
-    <link rel="stylesheet" href="http://maps5.trimet.org/foundation/stylesheets/app.css">
+    <link rel="stylesheet" href="stylesheets/foundation.css">
+    
+	<!-- XXX need app.css, ie.css, and html5.js XXX -->
+	<link rel="stylesheet" href="stylesheets/app.css">
     <!--[if lt IE 9]>
-        <link rel="stylesheet" href="http://maps5.trimet.org/foundation/stylesheets/ie.css">
+        <link rel="stylesheet" href="stylesheets/ie.css">
     <![endif]-->
 
-    <script src="http://maps5.trimet.org/foundation/javascripts/jquery.min.js"></script>
+    <script src="javascripts/jquery.js"></script>
     <!-- IE Fix for HTML5 Tags -->
     <!--[if lt IE 9]>
-        <script src="http://maps5.trimet.org/foundation/javascripts/html5.js"></script>
+        <script src="javascripts/html5.js"></script>
     <![endif]-->
     <style>
       div.pass {
@@ -54,50 +57,46 @@ $("a").click(function () {
         butt.innerHTML = "Show Passing Tests";
 });
 </script>
-<%!
-import datetime
+
+<%! import datetime 
+import os
 %>
-<%def name="content_a_or_b(test, a, b)"><%
-    if test is not False:
-        c = a
-    else:
-        c = b
-%>${c}</%def>
-
-<%def name="test_result(test, res)">
-    <%
-        expect_title = ""
-        if test.error_descript != None:
-            expect_title = "{0} - ".format(test.error_descript)
-
-	expect_title += "expected - "
-        if test.expect_output != None:
-            expect_title += " output: {0}, ".format(test.expect_output)
-        if test.expect_duration != None:
-            expect_title += " duration: {0}, ".format(test.expect_duration)
-
-        if test.expect_distance != None:
-            expect_title += " distance: {0}, ".format(test.expect_distance)
-
-        if test.expect_num_legs != None:
-            expect_title += " num_legs: {0}, ".format(test.expect_num_legs)
-    %>
-        <div class="${res}"><span class="${res}">${res}</span> - ${test.description} (.csv line #${test.csv_line_number}) |  <a href="${test.get_planner_url()}" title="${expect_title}" target="#">Planner WS</a> | <a href="${test.get_map_url()}" title="${expect_title}" target="#">Map View</a> (<a href="${test.get_ridetrimetorg_url()}" title="${expect_title}" target="#">ride.trimet.org</a>)</div>
-</%def>
 
 <h1>OTP Build Report: ${datetime.datetime.now().strftime("%m.%d.%Y @ %I:%M %p")}</h1>
-<h3><span class="${content_a_or_b(test_errors,'fail','pass')}">${content_a_or_b(test_errors, 'Some tests FAILED', 'All tests are PASSING')}</span></h3>
+<h3>
+% if all_passed: 
+	<span class="pass">All tests are PASSING</span>
+% else: 
+	<span class="fail">Some tests FAILED</span>
+% endif 
+
 
 % for ts in test_suites:
+<% 
+name = os.path.basename(ts)
+dir = os.path.dirname(ts).split('/')[-1] 
+%>
+
     <p>
-    <h2>${ts.name}</h2>
-    % for t in ts.tests:
-        % if t.did_test_pass():
-            ${test_result(test=t, res="pass")}
-        % else:
-            ${test_result(test=t, res="fail")}
-        %endif
-    % endfor
+    <h2>${dir} ${name}</h2>
+
+	<div class="">
+	<!-- description, planner, map url -->
+	Run: ${test_suites[ts]['run']} - Errors: ${len(test_suites[ts]['errors'])} - Skipped: ${len(test_suites[ts]['skipped'])} - Failures: ${len(test_suites[ts]['failures'])}
+	<br><br>
+	
+	% for test in test_suites[ts]:
+		% if not isinstance(test_suites[ts][test], int):
+			<div class="${test}">
+			% for res in test_suites[ts][test]:		
+				${res} -> <code>${test_suites[ts][test][res]}</code><br>
+			% endfor
+			</div>		
+		% endif
+				
+	% endfor
+	</div>
+			
     </p>
 % endfor
 </body>

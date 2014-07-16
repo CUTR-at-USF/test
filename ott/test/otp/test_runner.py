@@ -353,10 +353,11 @@ class USFPlanner(OTPTest):
 		self.setResponse("xml") 
 		super(USFPlanner, self).run(result)
 		
-# Route(Test) isValid, (car on walkway, bike rental, walk, drive, etc)
 # RouteBus(Test)  valid # of bullrunner routes used, etc
 # GTFS tests
- 
+# http://mobullity.forest.usf.edu:8088/trip-updates?debug
+# http://mobullity.forest.usf.edu:8088/vehicle-positions?debug
+
 class USFBikeRental(OTPTest):
 	""" Perform various tests on bike_rental API """	
 	
@@ -373,45 +374,13 @@ class USFBikeRental(OTPTest):
 		d = json.loads(self.otp_response)
 		self.assertGreater(len(d["stations"]), 0, msg="{0} - stations is empty".format(self.url))
 
-	# XXX - # of stations, at least some have bikes available, stations are within coordinates
-	# contains station
-
+	def test_bikes_available(self):
+		pass
 	
-# MAIN CODE
+	def test_stations_coordinates(self):
+		pass
+		
 	
-parser = argparse.ArgumentParser(description="OTP Test Suite")
-
-parser.add_argument('-o', '--otp-url', help="OTP REST Endpoint URL")
-parser.add_argument('-m', '--map-url', help="OTP Map URL")
-
-parser.add_argument('-t', '--template-path', help="Path to test suite template(s)")
-parser.add_argument('-c', '--csv-path', help="Path to test suite CSV file(s)")
-parser.add_argument('-r', '--report-path', help="Path to write test suite report(s)")
-#parser.add_argument('-b', '--base-dir', help="Base directory for file operations")
-
-parser.add_argument('--date', help="Set date for service tests")
-# XXX
-#parser.add_argument('-s', '--stress', action='store_true', help="Enable stress testing mode (XXX)")
-parser.add_argument('-d', '--debug', action='store_true', help="Enable debug mode")
-
-parser.set_defaults(
-otp_url=envvar('OTP_URL', 'http://localhost:8080/otp/'), 
-map_url=envvar('OTP_MAP_URL', 'http://localhost:8080/index.html'), 
-template_path=envvar('OTP_TEMPLATE', './templates/good_bad.html'), 
-csv_path=envvar('OTP_CSV_DIR', './suites/'),
-report_path=envvar('OTP_REPORT', './report/otp_report.html'))
-
-args = parser.parse_args(sys.argv[1:]) # XXX skip interpreter if given ... works on linux? 
-
-lev = logging.WARN # NOTSET?
-if args.debug: lev = logging.DEBUG
-
-logging.basicConfig(level=lev)
-
-# set base parameters for tests
-p = {'otp_url':args.otp_url}
-if args.date is not None: p['date'] = args.date
-
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
 def find_tests(path, tests):
 	files=os.listdir(path)
@@ -422,9 +391,7 @@ def find_tests(path, tests):
 			continue
 			
 		if f.lower().endswith('.csv'):
-			obj = {'file': path + "/" + f, 'result':False, 'suite':False}
-			obj['suite'] = unittest.TestSuite()
-			obj['result'] = unittest.TestResult()
+			obj = {'file': path + "/" + f, "lines":[]}
 			
 			cls = path.split('/')[-1]
 			
@@ -437,514 +404,102 @@ def find_tests(path, tests):
 				
 	return tests
 
-test_suites = find_tests(args.csv_path, [])
-
-# read CSV and add all tests to suite
-for s in test_suites:
-			file = open(s['file'], 'r')
-			reader = csv.DictReader(file)
-			fn = reader.fieldnames
-			for row in reader:
-				row = dict(row.items() + p.items()) # WILL OVERRIDE CSV SETTINGS
-				for k in row:
-					if row[k][0] == '[': row[k] = ast.literal_eval(row[k])
 	
-				s['param'] = row
-				s['suite'].addTests( s['cls'].add_with_param(s['cls'], row ) )
+# MAIN CODE
 
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser(description="OTP Test Suite")
+	
+	parser.add_argument('-o', '--otp-url', help="OTP REST Endpoint URL")
+	parser.add_argument('-m', '--map-url', help="OTP Map URL")
+	
+	parser.add_argument('-t', '--template-path', help="Path to test suite template(s)")
+	parser.add_argument('-c', '--csv-path', help="Path to test suite CSV file(s)")
+	parser.add_argument('-r', '--report-path', help="Path to write test suite report(s)")
+	#parser.add_argument('-b', '--base-dir', help="Base directory for file operations")
+	
+	parser.add_argument('--date', help="Set date for service tests")
+	# XXX
+	#parser.add_argument('-s', '--stress', action='store_true', help="Enable stress testing mode (XXX)")
+	parser.add_argument('-d', '--debug', action='store_true', help="Enable debug mode")
+	
+	parser.set_defaults(
+	otp_url=envvar('OTP_URL', 'http://localhost:8080/otp/'), 
+	map_url=envvar('OTP_MAP_URL', 'http://localhost:8080/index.html'), 
+	template_path=envvar('OTP_TEMPLATE', './templates/good_bad.html'), 
+	csv_path=envvar('OTP_CSV_DIR', './suites/'),
+	report_path=envvar('OTP_REPORT', './report/otp_report.html'))
+	
+	args = parser.parse_args(sys.argv[1:]) # XXX skip interpreter if given ... works on linux? 
+	
+	lev = logging.WARN # NOTSET?
+	if args.debug: lev = logging.DEBUG
+	
+	logging.basicConfig(level=lev)
+	
+	# set base parameters for tests
+	p = {'otp_url':args.otp_url}
+	if args.date is not None: p['date'] = args.date
+	
+	test_suites = find_tests(args.csv_path, [])
+	
+	# read CSV and add all tests to suite
+	for s in test_suites:
+		file = open(s['file'], 'r')
+		reader = csv.DictReader(file)
+		fn = reader.fieldnames
+		i = 0
+		for row in reader:
+			i += 1
+			row = dict(row.items() + p.items()) # WILL OVERRIDE CSV SETTINGS
+			for k in row:
+				if row[k][0] == '[': row[k] = ast.literal_eval(row[k])
+
+				obj = {}
+				obj['suite'] = unittest.TestSuite()
+				obj['result'] = unittest.TestResult()
+				obj['csv_line_number'] = i
+				obj['param'] = row
+				obj['suite'].addTests( s['cls'].add_with_param(s['cls'], row ) )
+				s['lines'].append( obj )
+				
 				'''
 				s.addTests( OTPVersion.add_with_param(OTPVersion, {'major':1, 'minor':0}) )
 				s.addTests( USFPlanner.add_with_param(USFPlanner, {'invalid_modes':['CAR'], 'fromPlace':'28.061239833892966%2C-82.41375267505644', 'toPlace':'28.06365404757197%2C-82.41353273391724', 'mode':'BICYCLE', 'maxWalkDistance':'750', 'arriveBy':'false', 'showIntermediateStops':'false'} ) )
 				s.addTests( USFBikeRental.add_with_param(USFBikeRental, {}) ) #{'otp_url':'http://127.0.0.1/otp/'}) )
 				'''
 
-report_data = {}
+	report_data = {}
+	failures = 0
 
-for s in test_suites:				
-	s['suite'].run(s['result'])
-
-	tests = {'run':s['result'].testsRun, 'skip':len(s['result'].skipped), 'failed':len(s['result'].failures), 'errors':len(s['result'].errors)}
-	for t in s['suite']: 
-		tests[t.id().split('.')[-1]] = {'skipped':[], 'failed':[], 'errors':[]}
-
-	for r in s['result'].errors:		
-		tests[r[0].id().split('.')[-1]]['errors'].append( r[1] ) # strip().split('\n')[-1]
-	
-	for r in s['result'].failures:
-		tests[r[0].id().split('.')[-1]]['failed'].append( r[1] ) # strip().split('\n')[-1]	
-
-	for r in s['result'].skipped:		
-		tests[r[0].id().split('.')[-1]]['skipped'].append( r[1] ) # strip().split('\n')[-1]	
+	for s in test_suites:				
+		if s['file'] not in report_data: report_data[s['file']] = {'run':0, 'skipped':{}, 'failures':{}, 'errors':{}}
 		
-	report_data[s['file']] = tests
-
-print report_data	
-sys.exit(0)
-
-# REPORT
-
-#r = self.report_template.render(test_suites=self.test_suites, test_errors=self.has_errors())
-
+		for line in s['lines']:
+			line['suite'].run(line['result'])
 	
-sys.exit(0)
-
+			report_data[s['file']]['run'] += line['result'].testsRun
+						
+			# strip().split('\n')[-1] to remove full traceback
+			for r in line['result'].errors:		
+				report_data[s['file']]['errors']["%s:%d" % (r[0].id().split('.')[-1], line['csv_line_number'])] = r[1] 
 		
-class TrimetTest(CsvTest):
-    """ Params for test, along with run capability -- Test object is typically built from a row in an .csv test suite 
-    """
-
-    def __init__(self, param_dict, line_number, date=None, args=None):
-        """ Given the CSV file lines, and line number, read and setup the test		
-		{
-            OTP params:
-              'From'
-              'To'
-              'Max dist'
-              'Mode'
-              'Optimize'
-              'Service' - expects 'Saturday' or 'Sunday' or leave empty
-              'Time'
-
-            Test params:
-              'Arrive by' - expects 'FALSE' if arrive by test should not be ran or leave empty
-              'Depart by' - expects 'FALSE' if depart by test should not be ran or leave empty
-              'Expected output'
-              'Expected trip duration'
-              'Expected trip distance'
-              'Expected number of legs'
-
-            
-        """
-        self.csv_line_number = line_number
-        self.csv_params      = param_dict
-        self.date            = date
-
-        self.itinerary       = None
-        self.otp_params      = ''
-        self.is_valid        = True
-        self.error_descript  = None
-        self.result          = TestResult.FAIL
-
-        self.coord_from      = self.get_param('From')
-        self.coord_to        = self.get_param('To')
-        self.distance        = self.get_param('Max dist')
-        self.mode            = self.get_param('Mode')
-        self.optimize        = self.get_param('Optimize')
-        self.service         = self.get_param('Service')
-        self.time            = self.get_param('Time')
-        if self.time is not None and self.time.find(' ') > 0:
-            self.time = self.time.replace(' ', '')
-
-        self.help     = self.get_param('help/notes')
-        self.expect_output   = self.get_param('Expected output')
-        self.expect_duration = self.get_param('Expected trip duration')
-        self.expect_distance = self.get_param('Expected trip distance')
-        self.expect_num_legs = self.get_param('Expected number of legs')
-        self.arrive_by       = self.get_param('Arrive by')
-        self.depart_by       = self.get_param('Depart by')
-        
-        if 'Expected number of legs' in param_dict:
-            self.expect_num_legs = self.get_param('Expected number of legs')
-
-        self.planner_url = envvar('OTP_URL',  'http://localhost:8080/otp/')
-        self.map_url = envvar('OTP_MAP_URL',  'http://localhost:8080/index.html')
-        self.init_url_params()
-        self.date = self.get_date_param(self.date)
-
-
-    def get_param(self, name, def_val=None):
-        ret_val = def_val
-        try:
-            p = self.csv_params[name]
-            if p is not None and len(p) > 0:
-                ret_val = p.strip()
-        except:
-            logging.warn("WARNING: '{0}' was not found as an index in record {1}".format(name, self.csv_params))
-
-        return ret_val
-
-
-    def did_test_pass(self):
-        ret_val = False
-        if self.result is not None and self.result is TestResult.PASS:
-            ret_val = True
-        return ret_val
-
-
-    def append_note(self, note=""):
-        self.help += " " + note 
-   
-    def test_otp_result(self, strict=True):
-        """ regexp test of the itinerary output for certain strings
-        """
-        if self.itinerary == None:
-            self.result = TestResult.FAIL if strict else TestResult.WARN
-            self.error_descript = "test_otp_result: itinerary is null"
-            logging.info(self.error_descript)
-        else:
-            if len(self.itinerary) < 1000:
-                self.result = TestResult.FAIL if strict else TestResult.WARN
-                self.error_descript = "test_otp_result: itinerary content looks small at " + str(len(self.itinerary)) + " characters."
-                logging.warn(self.error_descript)
-            else:
-                self.error_descript = "test_otp_result: itinerary content size is " + str(len(self.itinerary)) + " characters."
-                logging.info(self.error_descript)
-                warn = False
-                if self.expect_output is not None and len(self.expect_output) > 0:
-                    regres = re.search(self.expect_output, self.itinerary)
-                    if regres is None:
-                        self.result = TestResult.FAIL if strict else TestResult.WARN
-                        self.error_descript += "test_otp_result: couldn't find " + self.expect_output + " in otp response."
-                        warn = True
-                if self.expect_duration is not None and len(self.expect_duration) > 0:
-                    durations = re.findall('<itinerary>.*?<duration>(.*?)</duration>.*?</itinerary>', self.itinerary) 
-                    error = 0.2
-                    high = float(self.expect_duration) * (1 + error)
-                    low = float(self.expect_duration) * (1 - error)
-                    for duration in durations:
-                        if int(duration) > high or int(duration) < low:
-                            self.result = TestResult.FAIL if strict else TestResult.WARN
-                            self.error_descript += "test_otp_result: an itinerary duration was different than expected by more than {0}%.".format(error * 100)
-                            warn = True
-                            break
-                if self.expect_num_legs is not None and len(self.expect_num_legs) > 0:
-                    try:
-                        values = [int(i) for i in self.expect_num_legs.split('|')]
-                        if len(values) != 2:
-                            raise ValueError
-                        min_legs = values[0]
-                        max_legs = values[1]
-                        all_legs = re.findall('<itinerary>.*?<legs>(.*?)</legs>.*?</itinerary>', self.itinerary)
-                        for legs in all_legs:
-                            num_legs = len(re.findall('<leg .*?>', legs))
-                            if num_legs > max_legs or num_legs < min_legs:
-                                self.result = TestResult.FAIL if strict else TestResult.WARN
-                                self.error_descript += "test_otp_result: an itinerary returned was not between {0} and {1} legs.".format(min_legs, max_legs)
-                                warn = True
-                                break
-                    except ValueError:
-                        self.error_descript += "expected number of legs test not in 'min|max' format."
-                        warn = True
-                if warn:
-                    logging.warn(self.error_descript)
-
-        return self.result
-
-
-    def get_planner_url(self):
-        return "{0}?submit&{1}".format(self.planner_url, self.otp_params)
-
-
-    def get_map_url(self):
-        purl = self.planner_url.split('/')[-1]
-        return "{0}?submit&purl=/{1}&{2}".format(self.map_url, purl, self.otp_params)
-
-    
-    def get_bullrunner_url(self): # XXX
-        return "http://usfbullrunner.com?submit&" + self.otp_params
-
-    
-    def init_url_params(self):
-        """
-        """
-        self.otp_params = 'fromPlace={0}&toPlace={1}'.format(self.coord_from, self.coord_to)
-        if self.coord_from == None or self.coord_from == '' or self.coord_to == None or self.coord_to == '':
-            if self.coord_from != None or self.coord_to != None:
-                self.error_descript = "no from and/or to coordinate for the otp url (skipping test) - from:" + str(self.coord_from) + ' to:' + str(self.coord_to)
-                logging.warn(self.error_descript)
-            self.is_valid = False
-       
-    def url_distance(self, dist=None):
-        self.url_param('maxWalkDistance', dist, self.distance)
-
-    def url_mode(self, mode=None):
-        self.url_param('mode', mode, self.mode)
-
-    def url_optimize(self, opt=None):
-        self.url_param('optimize', opt, self.optimize)
-
-    def url_arrive_by(self, opt="true"):
-        self.url_param('arriveBy', opt, self.optimize)
-
-    def url_time(self, time=None):
-        self.url_param('time', time, self.time)
-
-    def url_time_7am(self):
-        self.url_param('time', '7:00am')
-
-    def url_time_12pm(self):
-        self.url_param('time', '12:00pm')
-
-    def url_time_5pm(self):
-        self.url_param('time', '5:00pm')
-
-    def url_service(self, svc=None):
-        """
-        """
-        pass
-    
-    def get_date_param(self, date):
-        """ provide a default date (set to today) if no service provided...
-        """
-
-
-        if self.otp_params.find('date') < 0:
-            if date is None:
-                if self.service is None:
-                    date = datetime.datetime.now().strftime("%Y-%m-%d")
-                elif self.service == 'Saturday':
-                    date = self.url_service_next_saturday()
-                elif self.service == 'Sunday':
-                    date = self.url_service_next_sunday()
-                else:
-                    date = datetime.datetime.now().strftime("%Y-%m-%d")
-                    logging.warn("service param '{0}' not valid, using todays date.".format(self.service))
-            
-            self.url_param('date', date)
-        return date
-
-
-    def url_service_next_weekday(self):
-        """
-        """
-        pass
-
-    def url_service_next_saturday(self):
-        date = datetime.datetime.now()
-        day = date.weekday()
-        if day == 6:
-            date = date+datetime.timedelta(days=6)
-        else:
-            date = date+datetime.timedelta(days=5-day)
-        date = date.strftime("%Y-%m-%d")
-        return date
-        
-
-    def url_service_next_sunday(self):
-        date = datetime.datetime.now()
-        day = date.weekday()
-        date = date+datetime.timedelta(days=6-day)
-        date = date.strftime("%Y-%m-%d")
-        return date
-
-    def url_service_next_month_weekday(self):
-        """
-        """
-        pass
-
-    def depart_by_check(self):
-        if self.depart_by == 'FALSE':
-            self.is_valid = False
-
-    def arrive_by_check(self):
-        if self.arrive_by == 'FALSE':
-            self.is_valid = False
-
-
-class TestSuite(object):
-    """ url
-    """
-
-    def __init__(self, dir, file, date=None):
-        """
-        """
-        self.file_path = dir + file
-        self.name = file
-        self.date = date
-        self.params = []
-        self.tests  = []
-        self.failures = 0
-        self.passes   = 0
-        self.read()
-
-    def read(self):
-        """ read a .csv file, and save each row as a set of test params
-        """
-        file = open(self.file_path, 'r')
-        reader = csv.DictReader(file)
-        fn = reader.fieldnames
-        for row in reader:
-            self.params.append(row)
-
-    @classmethod
-    def prep_url(cls, t):
-        t.url_distance()
-        t.url_mode()
-        t.url_optimize()
-        t.url_time()
-
-    def do_test(self, t, strict=True):
-        self.prep_url(t)
-        if t.is_valid:
-            t.call_otp()
-            time.sleep(1)
-            t.test_otp_result(strict)
-            self.tests.append(t);
-            if t.result is TestResult.PASS:
-                self.passes += 1
-            elif t.result is TestResult.FAIL:
-                logging.info("test_suite: this test failed " + t.get_planner_url() + "\n")
-                self.failures += 1
-            sys.stdout.write(".")
-
-    def run(self):
-        """ iterate the list of tests from the .csv files, run the test (call otp), and check the output.
-        """
-        logging.info("test_suite {0}: ******* date - {1} *******\n".format(self.name, datetime.datetime.now()))
-        for i, p in enumerate(self.params):
-            # TYPE XXX routers, planner, bike_rental
-            # http://docs.opentripplanner.org/apidoc/0.11.0/resource_GeocoderResource.html
-            print p
-            continue
-            t = Test(p, i+2, self.date)  # i+2 is the line number in the .csv file, accounting for the header
-            t.depart_by_check()
-            self.do_test(t)
-
-            """ arrive by tests
-            """
-            t = Test(p, i+2, self.date)
-            t.url_arrive_by()
-            t.append_note(" ***NOTE***: arrive by test ")
-            t.arrive_by_check()
-            self.do_test(t, False)
-
-    def print_test_urls(self):
-        """ iterate the list of tests from the .csv files and print the URLs
-        """
-        for i, p in enumerate(self.params):
-            t = Test(p, i+2, self.date)  # i+2 is the line number in the .csv file, accounting for the header
-            t.depart_by_check()
-            self.prep_url(t)
-            url = t.get_planner_url()
-            if t.is_valid:
-                print url
-
-            """ arrive by tests
-            """
-            t = Test(p, i+2, self.date)
-            t.url_arrive_by()
-            t.append_note(" ***NOTE***: arrive by test ")
-            t.arrive_by_check()
-            url = t.get_planner_url()
-            if t.is_valid:
-                print url
-
-
-class TestRunner(object):
-    """ Run .csv tests from ./tests/ by constructing a
-        url to the trip planner, calling the url, then printing a report
-    """
-
-    def __init__(self, report_template=None, args=None, suites='./otpdeployer/suites/'):
-		"""constructor builds the test runner
-		"""
-		self.dir = args.csv_path
-		self.test_suites = self.get_test_suites(args.date, self.dir)
+			for r in line['result'].failures:
+				report_data[s['file']]['failures']["%s:%d" % (r[0].id().split('.')[-1], line['csv_line_number'])] = r[1]
+	
+			for r in line['result'].skipped:		
+				report_data[s['file']]['skipped']["%s:%d" % (r[0].id().split('.')[-1], line['csv_line_number'])] = r[1]
 		
-		if args.template_path is not None:
-			self.report_template = Template(filename=args.template_path)
-
-    @classmethod
-    def get_test_suites(cls, date=None, dir='./otpdeployer/suites/'):
-        test_suites = []
-        files=os.listdir(dir)
-        for f in files:
-            if f.lower().endswith('.csv'):
-                t = TestSuite(dir, f, date)
-                test_suites.append(t)
-        return test_suites
-
-    def has_errors(self):
-        ret_val = False
-        for t in self.test_suites:
-            if t.failures > 0 or t.passes <= 0:
-                ret_val = True
-                logging.info("test_suite {0} has {1} error(s) and {2} passes".format(t, t.failures, t.passes))
-        return ret_val
-
-    def run(self):
-        """ execute tests
-        """
-        for ts in self.test_suites:
-            ts.run()
-
-    def print_test_urls(self):
-        """ print test urls...
-        """
-        for ts in self.test_suites:
-            ts.print_test_urls()
-
-    def report(self):
-        """ render a pass/fail report
-        """
-        r = self.report_template.render(test_suites=self.test_suites, test_errors=self.has_errors())
-        return r
-
-
-def runner(args):
-    ''' main entry of the test runner
-    '''
-    date = args.date
-    lev  = logging.INFO
-    if args.debug is True:
-        lev = logging.DEBUG
+			failures += len(line['result'].failures)		
+				
 	
-    logging.basicConfig(level=lev)
-    
-    t = TestRunner(args=args)
-    t.run()
-    r = t.report()
-
-    if t.has_errors():
-        print('There were errors')
-    else:
-        print('Nope, no errors')
-   
-    f = open(args.report_path, 'w')
-    f.write(r)
-    f.flush()
-    f.close()
-
-
-def stress(argv):
-    date = None
-    if len(argv) > 2:
-        date = argv[1]
-
-    test_suites = TestRunner.get_test_suites(date)
-    for ts in test_suites:
-        ts.print_test_urls()
-
-
-def main(argv):
+	# REPORT
+	
+	report_template = Template(filename=args.template_path)
+	r = report_template.render(test_suites=report_data, all_passed = True if failures <= 0 else False)
+	
+	fp = open(args.report_path, "w")
+	fp.write(r)
+	fp.close()
 
 	
-	if args.stress is True:			
-		stress(argv)
-	else:
-		runner(args)
-
-def xmain(argv):
-    ''' test method for developing / debugging the suite.... 
-    '''
-    date = None
-    if len(argv) > 1:
-        date = argv[1]
-
-    logging.basicConfig(level=logging.INFO)
-    template = envvar('OTP_TEMPLATE', './otpdeployer/templates/good_bad.html')
-    x = Test({
-              'From' : '1',
-              'To' : '1',
-              'Max dist' : '1',
-              'Mode' : '1',
-              'Optimize' : '1',
-              'Service' : '1',
-              'Time' : '1',
-       }, 1, date)
-    print x.get_planner_url()
-    print x.get_map_url()
-    print x.get_bullrunner_url()
-
-if __name__ == '__main__':
-    main(sys.argv)
