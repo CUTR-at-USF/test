@@ -479,16 +479,17 @@ if __name__ == "__main__":
 			line['suite'].run(line['result'])
 	
 			report_data[s['file']]['run'] += line['result'].testsRun
-						
+			desc = "%d (%s)" % (line['csv_line_number'], line['param']['description']) if 'description' in line['param'] else "%d" % line['csv_line_number']
+			
 			# strip().split('\n')[-1] to remove full traceback
 			for r in line['result'].errors:		
-				report_data[s['file']]['errors']["%s:%d" % (r[0].id().split('.')[-1], line['csv_line_number'])] = r[1] 
+				report_data[s['file']]['errors']["%s:%s" % (r[0].id().split('.')[-1], desc)] = r[1] 
 		
 			for r in line['result'].failures:
-				report_data[s['file']]['failures']["%s:%d" % (r[0].id().split('.')[-1], line['csv_line_number'])] = r[1]
+				report_data[s['file']]['failures']["%s:%s" % (r[0].id().split('.')[-1], desc)] = r[1]
 	
 			for r in line['result'].skipped:		
-				report_data[s['file']]['skipped']["%s:%d" % (r[0].id().split('.')[-1], line['csv_line_number'])] = r[1]
+				report_data[s['file']]['skipped']["%s:%s" % (r[0].id().split('.')[-1], desc)] = r[1]
 		
 			failures += len(line['result'].failures)		
 				
