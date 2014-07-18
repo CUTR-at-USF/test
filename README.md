@@ -10,7 +10,9 @@ Usage:
 ======
 python ott/test/otp/test_runner.py
 
-usage: test_runner.py [-h] [-o OTP_URL] [-m MAP_URL] [-t TEMPLATE_PATH]
+```
+usage: 
+test_runner.py [-h] [-o OTP_URL] [-m MAP_URL] [-t TEMPLATE_PATH]
                       [-c CSV_PATH] [-r REPORT_PATH] [--date DATE] [-d]
 
 optional arguments:
@@ -27,6 +29,7 @@ optional arguments:
                         Path to write test suite report(s)
   --date DATE           Set date for service tests
   -d, --debug           Enable debug mode
+```
 
 The following variables can also be set via _Environment Variables_:
 * OTP_URL (default http://localhost:8080/otp/
