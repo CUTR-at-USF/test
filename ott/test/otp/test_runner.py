@@ -316,38 +316,16 @@ class USFPlanner(OTPTest):
 		
 		
 	def test_no_errors(self):
-		
+		""" """
 		regres = re.findall("<error><id>(.*)</id>", self.otp_response)
 		if len(regres) > 0: errnum = regres[0]
 		else: errnum = ''
 		
 		self.assertEqual(len(regres), 0, msg="OTP returned error #{0}".format(errnum))
 		
-		
-	# XXX optimize, time (depart/arrive)
+	# BUS CHECK
 	
-	
-	'''
-        self.itinerary       = None
-        self.coord_from      = self.get_param('From')
-        self.coord_to        = self.get_param('To')
-        self.distance        = self.get_param('Max dist')
-        self.mode            = self.get_param('Mode')
-        self.optimize        = self.get_param('Optimize')
-        self.service         = self.get_param('Service')
-        self.time            = self.get_param('Time')
-        if self.time is not None and self.time.find(' ') > 0:
-            self.time = self.time.replace(' ', '')
-        self.help     = self.get_param('help/notes')
-        self.expect_output   = self.get_param('Expected output')
-        self.expect_duration = self.get_param('Expected trip duration')
-        self.expect_distance = self.get_param('Expected trip distance')
-        self.expect_num_legs = self.get_param('Expected number of legs')
-        self.arrive_by       = self.get_param('Arrive by')
-        self.depart_by       = self.get_param('Depart by')        
-        if 'Expected number of legs' in param_dict:
-            self.expect_num_legs = self.get_param('Expected number of legs'			
-	'''
+	# XXX optimize, time (depart/arrive)	
 	
 	def run(self, result=None):		
 		self.setResponse("xml") 
