@@ -41,8 +41,6 @@ class TestResult:
 
 # from tests import * # import Test base class and other child classes
 
-# CSVLoader to add_test()
-
 _cache = {}
 def cache_get(key):
 	""" basic dict accessor for global _cache """
@@ -78,6 +76,64 @@ class Test(unittest.TestCase):
 			suite.addTest(class_name(methodName=name, param=param))
 		return suite
 
+		
+class OneBusAway(Test):
+	"""
+	Test the gtfs-realtime-trip-updates API
+	http://mobullity.forest.usf.edu:8088/trip-updates?debug
+	http://mobullity.forest.usf.edu:8088/vehicle-positions?debug
+	"""
+
+	def __init__(self, methodName='runTest', param=None):
+		u = self.param['otp_url'] if 'otp_url' in self.param else "http://localhost:8088/" 
+		if hasattr(self, 'url'): self.url = u + self.url
+		else: self.url = u
+		
+		super(OneBusAway, self).__init__(methodName, param)
+		
+	def run(self, result=None):
+						
+		self.call_api(self.url)		
+				
+		super(OneBusAway, self).run(result)
+			
+	def call_api(self, url):
+		""" 
+		Calls the web service
+        """
+
+		if cache_get(self.url) is not None:
+			self.api_response = cache_get(self.url)
+			self.response_time = 0		
+		else:		
+			self.api_response = None
+			try:
+				start = time.time()
+				socket.setdefaulttimeout(45) # XXX params ?
+				req = urllib2.Request(url, None, {}) 
+				res = urllib2.urlopen(req)
+				self.api_response = res.read()
+				res.close()
+				end = time.time()
+				self.response_time = end - start
+			
+				logging.info("call_api: response time of " + str(self.response_time) + " seconds for url " + url)
+				logging.debug("call_api: API output for " + url)
+				logging.debug(self.api_response)
+				
+				cache_set(self.url, self.api_response)
+			except Exception as ex:
+				self.fail(msg="{0} failed - Exception: {1}".format(url, str(ex)))
+	
+		self.assertLessEqual(self.response_time, 30, msg="%s took *longer than 30 seconds*" % url)
+
+	# Basic tests for all OTP calls
+	def test_result_not_null(self):
+		self.assertNotEqual(self.api_response, None, msg="{0} - result is null".format(self.url))
+	
+	def test_result_too_small(self):
+		self.assertGreater(len(self.api_response), 1000, msg="{0} - result looks small".format(self.url))
+				
 class OTPTest(Test):
 	"""
 	Base class containing methods to interact with OTP Rest Endpoint
@@ -161,6 +217,31 @@ class OTPTest(Test):
 	
 # BEGIN TESTCASES #
 
+class GTFSVehiclePositions(OneBusAway):
+
+		def run(self, result=None):
+			self.url = self.url + "vehicle-positions?debug"
+			
+			super(GTFSVehiclePositions, self).run(result)
+			
+		def test_vehicles_available(self):
+			t = re.findall("entity {", self.api_response)
+			
+			self.assertGreater(len(t), 0, msg="{0} has no vehicle positions available".format(self.url))
+
+class GTFSTripUpdates(OneBusAway):
+
+		def run(self, result=None):
+			self.url = self.url + "trip-updates?debug"
+			
+			super(GTFSTripUpdates, self).run(result)
+			
+		def test_trips_available(self):
+		
+			t = re.findall("entity {", self.api_response)
+			
+			self.assertGreater(len(t), 0, msg="{0} has no trips available".format(self.url))			
+										
 
 class OTPVersion(OTPTest):
 	""" Check /otp/ serverInfo endpoint for various information """
@@ -324,17 +405,34 @@ class USFPlanner(OTPTest):
 		self.assertEqual(len(regres), 0, msg="OTP returned error #{0}".format(errnum))
 		
 	# BUS CHECK
-	
+	def test_use_preferred_bus_route(self):
+		""" ensure a given route is chosen """
+		if 'use_bus_route' not in self.param: self.skipTest('suppress')
+		if not isinstance(self.param['use_bus_route'], list): self.param['use_bus_route'] = list(self.param['use_bus_route'])
+		
+		all_modes = re.findall('<leg mode="BUS" route="(.*)"', self.otp_response)
+		found = list(set(all_modes) & set(self.param['use_bus_route']))
+		
+		self.assertGreater(len(found), 0, msg="Route did not use any of the preferred bus routes")
+		
+	def test_max_legs(self):
+		""" ensure # of modes are not excessive (multiple bus/car legs etc) """
+		if 'max_legs' not in self.param: self.skipTest('suppress')
+		
+		all_modes = re.findall('<leg mode="(.*)" route', self.otp_response)
+		
+		# sum each mode and check against max_legs
+		for m in all_modes:
+			cnt = len(filter(lambda x: x == m, all_modes))
+					
+			self.assertLessEqual(cnt, self.param['max_legs'], msg="Route used too many legs for {0}".format(m))	
+		
 	# XXX optimize, time (depart/arrive)	
 	
 	def run(self, result=None):		
 		self.setResponse("xml") 
 		super(USFPlanner, self).run(result)
 		
-# RouteBus(Test)  valid # of bullrunner routes used, etc
-# GTFS tests
-# http://mobullity.forest.usf.edu:8088/trip-updates?debug
-# http://mobullity.forest.usf.edu:8088/vehicle-positions?debug
 
 class USFBikeRental(OTPTest):
 	""" Perform various tests on bike_rental API """	
@@ -353,10 +451,27 @@ class USFBikeRental(OTPTest):
 		self.assertGreater(len(d["stations"]), 0, msg="{0} - stations is empty".format(self.url))
 
 	def test_bikes_available(self):
-		pass
-	
+		d = json.loads(self.otp_response)
+		for row in d["stations"]:
+			self.assertGreater(len(row['bikes']), 0, msg="{0} - has no bikes available".format(row['name']))
+			break # at least one has to pass
+			
 	def test_stations_coordinates(self):
-		pass
+		if 'station_coordinates' not in self.param: self.skipTest('suppress')
+		
+		error = 0.2
+		high = [float(self.param['station_coordinates'][0]) * (1 + error)]
+		low = [float(self.param['station_coordinates'][0]) * (1 - error)]
+		
+		high[1] = float(self.param['station_coordinates'][1]) * (1 - error)
+		low[1] = float(self.param['station_coordinates'][1]) * (1 - error)
+		
+		d = json.loads(self.otp_response)
+		for row in d["stations"]:
+			t = (row['lat'] >= low[0] && row['lat'] <= high[0])
+			t = t && (row['lng'] >= low[1] && row['lng'] <= high[1])
+			
+			self.assert(t, msg="{0} station not within coordinate range".format(row['name']))
 		
 	
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report

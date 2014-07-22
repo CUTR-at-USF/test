@@ -52,24 +52,53 @@ Each "Test Class" currently uses the "OTPTest" as a base to indicate REST-API ca
 Each test supports different parameters:
 
 OTPVersion: Polls the /otp/ endpoint for server info 
+===========
 * test_version: Accepts major, minor and checks serverInfo version for match
 
 USFPlanner: Checks /otp/routers/default/planner and supports all standard OTP parameters
+===========
 * test_expected_output: 'expected_output' regular expression assertNotEqual(None)
 * test_trip_duration: Checks all returned itinerary durations are within range of 'duration' 
 * test_trip_distance: Checks all returned itinerary distances are within range of 'distance'
 * test_trip_num_legs: Checks all # of legs in returned itinerary are within min|max of 'num_legs' 
 * test_invalid_modes: Checks all returned itinerary leg mode="" doesn't exist in 'invalid_modes'
+* test_mode_exists: Ensures at least one leg used 'mode'
 * test_no_errors: Ensures no <error><id>.* is returned in response.
- 
+* test_use_preferred_bus_route: Ensure 'use_bus_route' is used at least once.
+* test_max_legs: Ensure count of any given leg mode is <= 'max_legs'
+
+@TODO test_arrive_by, test_depart_at (for testing 'date')
+@TODO maxWalkDistance respected
+@TODO specified 'mode' is respected
+@TODO specified 'preferredRoutes' and unpreferred
+@TODO optimize
+@TODO bike triangle routing
+@TODO wheelchair
+
 USFBikeRental: Checks /otp/routers/default/bike_rental
+==============
 * test_not_empty: Checks that the stations list is not empty
 * test_bikes_available: Checks at least one station has bikes available
-* test_stations_coordinates: Checks no stations are outside a region (XXX)
+* test_stations_coordinates: Checks no stations are outside a region 
 
-@TODO USFGeocoder
-@TODO USFPlannerBus
-@TODO GTFS tests
+USFGeocoder:
+============
+
+USFTransit: Check /routers/default/transit API (@NOTE TransitIndex.java is missing in 1.0.x currently)
+===========
+
+
+OneBusAway:
+===========
+
+GTFSTripUpdates: Check /trip-updates?debug
+* test_trip_updates: Ensure some "entity {" property trees are returned
+
+GTFSVehicleUpdates: Check /vehicle-positions?debug
+* test_vehicles_available: Ensure some "entity {" property trees are returned
+
+@TODO OSM data, tiles?
+@TODO routers/default/metadata (graph info)
 
 Each CSV file can also specify the following to override defaults, but not command-line arguments:
 * otp_url
