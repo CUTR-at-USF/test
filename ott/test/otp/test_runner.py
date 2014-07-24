@@ -278,9 +278,6 @@ class USFGeocoder(OTPTest):
 	"""
 	Test the OTP Geocoder service returns correct coordinates
 
-	{u'count': 1, u'results': [{u'lat': 28.0617, u'lng': -82.4133, u'description': u
-'ADM'}], u'error': None}
-
 	@TODO org.otp.geocoder.ws.geocoderserver missing from 1.0.x
 	"""
 	
@@ -306,6 +303,10 @@ class USFGeocoder(OTPTest):
 		for res in d['results']:
 			self.assertEqual(res['description'], self.param['address'], msg="{0} returned an address and not a USF building name".format(self.url))
 		
+	def test_no_error(self):
+		d = json.loads(self.otp_response)
+		self.assertEqual(d['error'], None, msg="{0} returned an error {1}".format(self.url, d['error']))
+		
 	def test_expect_location(self):
 		if 'location' not in self.param: self.skipTest('suppress')
 
@@ -321,8 +322,10 @@ class USFGraphMetaData(OTPTest):
 
 	def __init__(self, methodName='runTest', param=None):		
 		self.param = param
-		self.url = "/routers/default/metadata"
+		self.url = "routers/default/metadata"
 		super(USFGraphMetaData, self).__init__(methodName, param)		
+		if methodName == 'test_result_too_small':
+			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) # because serverInfo is a small result 
 
 	def run(self, result=None):
 		self.setResponse("json")
@@ -332,8 +335,6 @@ class USFGraphMetaData(OTPTest):
 		if 'modes' not in self.param: self.skipTest('suppress')
 		
 		d = json.loads(self.otp_response)
-		print d
-		d = d['graphMetadata']
 		self.assertTrue(self.param['modes'] in d['transitModes'], msg="Transit mode not found in metadata")
 		
 	def test_bounds(self):
@@ -349,7 +350,6 @@ class USFGraphMetaData(OTPTest):
 		low[1] = float(self.param['coords'][1]) * (1 - error)
 		
 		d = json.loads(self.otp_response)
-		row = d['graphMetadata']
 		t = (row['lowerLeftLatitude'] >= low[0] and row['upperRightLatitude'] <= high[0])
 		t = t and (row['lowerLeftLongitude'] >= low[1] and row['upperRightLongitude'] <= high[1])
 			
@@ -508,6 +508,8 @@ class USFPlanner(OTPTest):
 		
 		self.assertGreater(len(found), 0, msg="Route did not use any of the preferred bus routes")
 		
+	# @TODO specified 'mode', 'preferredRoutes' and unpreferred
+	
 	def test_max_legs(self):
 		""" ensure # of modes are not excessive (multiple bus/car legs etc) """
 		if 'max_legs' not in self.param: self.skipTest('suppress')
@@ -519,11 +521,50 @@ class USFPlanner(OTPTest):
 			cnt = len(filter(lambda x: x == m, all_modes))
 					
 			self.assertLessEqual(cnt, self.param['max_legs'], msg="Route used too many legs for {0}".format(m))	
-			
+	
+	def test_arrive_by(self):
+		# arriveBy=true
+		# time.struct_time(tm_year=2014, tm_mon=7, tm_mday=7, tm_hour=7, tm_min=41, tm_sec=34, tm_wday=0, tm_yday=188, tm_isdst=-1)
+		if 'arrive_time' not in self.param: self.skipTest('suppress')
+		if self.param['arriveBy'] == "false": self.skipTest("did not request arrival time")
+		
+		all_times = re.findall('<endTime>(.*)<\/endTime>', self.otp_response)
+		
+		import time
+		dt = time.strptime(self.param['arrive_time'], "%H:%M:%S")
+		
+		for m in all_times:			
+			mt = time.strptime(m[:-6], "%Y-%m-%dT%H:%M:%S") # XXX timezone 
+			t = (mt["tm_hour"] == dt["tm_hour"]) and (mt["tm_min"] == dt["tm_min"]) and (mt["tm_sec"] == dt["tm_sec"])
+			self.assertTrue(t, msg="{0} did not arrive at specified time: {1} != {2}".format(self.url, self.param['arrive_time'], m))
+				
+	def test_depart_at(self):
+		# time, date, arriveBy=false 2014-07-07T07:41:34-04:00
+		# time.struct_time(tm_year=2014, tm_mon=7, tm_mday=7, tm_hour=7, tm_min=41, tm_sec=34, tm_wday=0, tm_yday=188, tm_isdst=-1)
+		if 'depart_time' not in self.param: self.skipTest('suppress')
+		if self.param['arriveBy'] <> "false": self.skipTest("did not request departure time")
+		
+		all_times = re.findall('<startTime>(.*)<\/startTime>', self.otp_response)
+		
+		import time
+		dt = time.strptime(self.param['depart_time'], "%H:%M:%S")
+		
+		for m in all_times:			
+			mt = time.strptime(m[:-6], "%Y-%m-%dT%H:%M:%S") # XXX timezone 
+			t = (mt["tm_hour"] == dt["tm_hour"]) and (mt["tm_min"] == dt["tm_min"]) and (mt["tm_sec"] == dt["tm_sec"])
+			self.assertTrue(t, msg="{0} did not start at specified time: {1} != {2}".format(self.url, self.param['depart_time'], m))
+		
+	def test_max_walk(self):
+		""" Ensure maxWalkDistance is respected for route """
+		
+		if 'max_walk' not in self.param: self.skipTest('suppress')
+		
+		all_walk = re.findall('<walkDistance>(.*)<\/walkDistance>', self.otp_response)
+				
+		for m in all_walk:		
+			self.assertLess(m, self.param['max_walk'], msg="{0} exceeded max_walk distance: {1} < {2}".format(self.url, self.param['max_walk'], m))
+		
 '''
-@TODO test_arrive_by, test_depart_at (for testing 'date')
-@TODO maxWalkDistance respected
-@TODO specified 'preferredRoutes' and unpreferred
 @TODO optimize
 @TODO bike triangle routing
 @TODO wheelchair
@@ -570,11 +611,11 @@ class USFBikeRental(OTPTest):
 		
 	
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
-def find_tests(path, tests):
+def find_tests(path, tests, skip=[]):
 	files=os.listdir(path)
 	for f in files:
 		if os.path.isdir(path + "/" + f) and f[0] != '.':			
-			tmp = find_tests(path + "/" + f, [])
+			tmp = find_tests(path + "/" + f, [], skip)
 			if len(tmp) > 0: tests += tmp 
 			continue
 			
@@ -582,11 +623,12 @@ def find_tests(path, tests):
 			obj = {'file': path + "/" + f, "lines":[]}
 			
 			cls = path.split('/')[-1]
+			if cls.lower() in skip: continue
 			
 			if len(cls) > 0: 
 				for m in globals(): # XXX tests namespace
-					if hasattr(globals()[m], cls) or m == cls:
-						obj['cls'] = globals()[m]
+					if hasattr(globals()[m], cls) or m.lower() == cls.lower():
+						obj['cls'] = globals()[m] 
 						tests.append(obj)
 						break
 				
@@ -607,20 +649,31 @@ if __name__ == "__main__":
 	#parser.add_argument('-b', '--base-dir', help="Base directory for file operations")
 	
 	parser.add_argument('--date', help="Set date for service tests")
-	# XXX
+	# XXX maybe disable cache for call_otp?
 	#parser.add_argument('-s', '--stress', action='store_true', help="Enable stress testing mode (XXX)")
 	parser.add_argument('-d', '--debug', action='store_true', help="Enable debug mode")
+	parser.add_argument('--log-level', help="Set log level (Accepted: CRITICAL, ERROR, WARNING (default), INFO, DEBUG) ")
+	# XXX silent level?
+	parser.add_argument('--skip', dest='skip_class', help="Comma-delimited list of test name(s) to skip")
 	
 	parser.set_defaults(
 	otp_url=envvar('OTP_URL', 'http://localhost:8080/otp/'), 
 	map_url=envvar('OTP_MAP_URL', 'http://localhost:8080/index.html'), 
 	template_path=envvar('OTP_TEMPLATE', './templates/good_bad.html'), 
 	csv_path=envvar('OTP_CSV_DIR', './suites/'),
-	report_path=envvar('OTP_REPORT', './report/otp_report.html'))
+	report_path=envvar('OTP_REPORT', './report/otp_report.html'),
+	log_level="WARNING",
+	skip_class=[None])
 	
 	args = parser.parse_args(sys.argv[1:]) # XXX skip interpreter if given ... works on linux? 
 	
-	lev = logging.WARN # NOTSET?
+	if not isinstance(args.skip_class, list): args.skip_class = args.skip_class.lower().split(',')
+	
+	try:
+		lev = getattr(logging, args.log_level)
+	except:
+		print "Invalid Log Level '%s'" % args.log_level
+		lev = logging.WARNING
 	if args.debug: lev = logging.DEBUG
 	
 	logging.basicConfig(level=lev)
@@ -629,7 +682,7 @@ if __name__ == "__main__":
 	p = {'otp_url':args.otp_url}
 	if args.date is not None: p['date'] = args.date
 	
-	test_suites = find_tests(args.csv_path, [])
+	test_suites = find_tests(args.csv_path, [], args.skip_class)	
 	
 	# read CSV and add all tests to suite
 	for s in test_suites:
@@ -648,20 +701,15 @@ if __name__ == "__main__":
 			for k in row:
 				if row[k][0] == '[': row[k] = ast.literal_eval(row[k])
 
-				obj = {}
-				obj['suite'] = unittest.TestSuite()
-				obj['result'] = unittest.TestResult()
-				obj['csv_line_number'] = i
-				obj['param'] = row
-				obj['suite'].addTests( s['cls'].add_with_param(s['cls'], row ) )
-				s['lines'].append( obj )
+			obj = {}
+			obj['suite'] = unittest.TestSuite()
+			obj['result'] = unittest.TestResult()
+			obj['csv_line_number'] = i
+			obj['param'] = row
+			# s.addTests( OTPVersion.add_with_param(OTPVersion, {'major':1, 'minor':0}) )
+			obj['suite'].addTests( s['cls'].add_with_param(s['cls'], row ) ) 
+			s['lines'].append( obj )
 				
-				'''
-				s.addTests( OTPVersion.add_with_param(OTPVersion, {'major':1, 'minor':0}) )
-				s.addTests( USFPlanner.add_with_param(USFPlanner, {'invalid_modes':['CAR'], 'fromPlace':'28.061239833892966%2C-82.41375267505644', 'toPlace':'28.06365404757197%2C-82.41353273391724', 'mode':'BICYCLE', 'maxWalkDistance':'750', 'arriveBy':'false', 'showIntermediateStops':'false'} ) )
-				s.addTests( USFBikeRental.add_with_param(USFBikeRental, {}) ) #{'otp_url':'http://127.0.0.1/otp/'}) )
-				'''
-
 	report_data = {}
 	failures = 0
 
@@ -670,7 +718,7 @@ if __name__ == "__main__":
 		
 		for line in s['lines']:
 			line['suite'].run(line['result'])
-	
+				
 			report_data[s['file']]['run'] += line['result'].testsRun
 			desc = "%d (%s)" % (line['csv_line_number'], line['param']['description']) if 'description' in line['param'] else "%d" % line['csv_line_number']
 			report_data[s['file']]['param'] = line['param']

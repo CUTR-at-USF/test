@@ -29,6 +29,10 @@ optional arguments:
                         Path to write test suite report(s)
   --date DATE           Set date for service tests
   -d, --debug           Enable debug mode
+  --log-level LOG_LEVEL
+                        Set log level (Accepted: CRITICAL, ERROR, WARNING
+                        (default), INFO, DEBUG)
+  --skip SKIP_CLASS     Comma-delimited list of test name(s) to skip  
 ```
 
 The following variables can also be set via _Environment Variables_:
@@ -67,8 +71,6 @@ USFPlanner: Checks /otp/routers/default/planner and supports all standard OTP pa
 * test_use_preferred_bus_route: Ensure 'use_bus_route' is used at least once.
 * test_max_legs: Ensure count of any given leg mode is <= 'max_legs'
 
-@TODO test_arrive_by, test_depart_at (for testing 'date')
-@TODO maxWalkDistance respected
 @TODO specified 'mode' is respected
 @TODO specified 'preferredRoutes' and unpreferred
 @TODO optimize
@@ -86,6 +88,7 @@ USFGeocoder: Checks /otp-geocoder/geocode (@NOTE GeocoderService.java is missing
 * test_count: Ensure count > 0
 * test_name: Ensure 'address' matches returned 'description'
 * test_expect_location: Ensure 'location' lat,lng == result lat lng
+* test_no_error: Ensure service does not return an error
 
 USFGraphMetadata: Checks /otp/routers/default/metadata
 =================
@@ -93,6 +96,7 @@ USFGraphMetadata: Checks /otp/routers/default/metadata
 * test_transit_modes: Ensure 'modes' is in transitModes
 
 USFRouters: Checks /otp/routers/default
+===========
 * test_not_empty: Ensure 'polygon' returned isn't empty
 
 USFTransit: Check /routers/default/transit API (@NOTE TransitIndex.java is missing in 1.0.x currently)
