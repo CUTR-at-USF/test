@@ -127,7 +127,7 @@ class OneBusAway(Test):
 	
 		self.assertLessEqual(self.response_time, 30, msg="%s took *longer than 30 seconds*" % url)
 
-	# Basic tests for all OTP calls
+	# Basic tests for all calls
 	def test_result_not_null(self):
 		self.assertNotEqual(self.api_response, None, msg="{0} - result is null".format(self.url))
 	
@@ -143,6 +143,7 @@ class OTPTest(Test):
 		u = self.param['otp_url'] if 'otp_url' in self.param else "http://localhost:8080/otp/" 
 		if hasattr(self, 'url'): self.url = u + self.url
 		else: self.url = u
+		self.type = "xml"
 		
 		super(OTPTest, self).__init__(methodName, param)
 		
@@ -157,8 +158,6 @@ class OTPTest(Test):
 		""" Allow JSON or XML responses """
 		self.type = type if type in ['json', 'xml'] else 'json'
 
-	# XXX parse XML/JSON helpers ?
-	
 	def call_otp(self, url):
 		""" 
 		Calls the trip web service
@@ -184,7 +183,7 @@ class OTPTest(Test):
 				logging.debug(self.otp_response)
 				
 				cache_set(self.url, self.otp_response)
-			except Exception as ex:
+			except Exception as ex:				
 				self.fail(msg="{0} failed - Exception: {1}".format(url, str(ex)))
 	
 		self.assertLessEqual(self.response_time, 30, msg="%s took *longer than 30 seconds*" % url)
@@ -195,10 +194,7 @@ class OTPTest(Test):
 	
 	def test_result_too_small(self):
 		self.assertGreater(len(self.otp_response), 1000, msg="{0} - result looks small".format(self.url))
-	
-	
-	# get_planner_url, get_map_url, get_bullrunner_url XXX
-    
+		
 	def url_params(self, params):
 		""" From query parameters, create OTP-compatible URL """
 		url = []
@@ -210,15 +206,17 @@ class OTPTest(Test):
 				
 		return '&'.join(url)
 
-	# XXX date - saturday, sunday
-	# maxWalkDistance, mode, optimize, arriveBy, time (7a, 12, 5p), 	
-	# XXX routers
-
 	
 # BEGIN TESTCASES #
 
+
 class GTFSVehiclePositions(OneBusAway):
 
+		def __init__(self, methodName='runTest', param=None):
+			self.methodName = methodName		
+			self.param = param
+			super(GTFSVehiclePositions, self).__init__(methodName, param)
+		
 		def run(self, result=None):
 			self.url = self.url + "vehicle-positions?debug"
 			
@@ -231,6 +229,11 @@ class GTFSVehiclePositions(OneBusAway):
 
 class GTFSTripUpdates(OneBusAway):
 
+		def __init__(self, methodName='runTest', param=None):
+			self.methodName = methodName		
+			self.param = param
+			super(GTFSTripUpdates, self).__init__(methodName, param)
+		
 		def run(self, result=None):
 			self.url = self.url + "trip-updates?debug"
 			
@@ -269,36 +272,118 @@ class OTPVersion(OTPTest):
 		t = int(self.param['major']) == d['serverVersion']['major'] and int(self.param['minor']) ==  d['serverVersion']['minor']
 			
 		self.assertTrue(t, msg="OTP version mismatch - {0} != {1}".format("%d.%d" % (int(self.param['major']), int(self.param['minor'])), "%d.%d" % (d['serverVersion']['major'], d['serverVersion']['minor'])))
-		
-'''			
+			
+			
 class USFGeocoder(OTPTest):
 	"""
 	Test the OTP Geocoder service returns correct coordinates
 
-	Requires: OTP >= 0.11.x
+	{u'count': 1, u'results': [{u'lat': 28.0617, u'lng': -82.4133, u'description': u
+'ADM'}], u'error': None}
+
+	@TODO org.otp.geocoder.ws.geocoderserver missing from 1.0.x
 	"""
 	
-	def __init__(self, methodName='runTest', param=None):
-		self.url = "geocode?"
+	def __init__(self, methodName='runTest', param=None):		
 		self.param = param
+		self.url = "/otp-geocoder/geocode?"
 		super(USFGeocoder, self).__init__(methodName, param)
+		if methodName == 'test_result_too_small':
+			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) 
 
 	def run(self, result=None):
-		self.setResponse("json")		
+		self.setResponse("json")
 		super(USFGeocoder, self).run(result)
 						
-	# opentripplanner-geocoder/src/main/resources/org/opentripplanner/geocoder/application-context.xml
+	def test_count(self):		
+		d = json.loads(self.otp_response)
+		self.assertGreaterEqual(d['count'], 1, msg="{0} returned no geocode results".format(self.url))		
+	
+	def test_name(self):
+		if 'address' not in self.param: self.skipTest('suppress')
+		
+		d = json.loads(self.otp_response)
+		for res in d['results']:
+			self.assertEqual(res['description'], self.param['address'], msg="{0} returned an address and not a USF building name".format(self.url))
+		
+	def test_expect_location(self):
+		if 'location' not in self.param: self.skipTest('suppress')
 
-	def test_timeout(self):
-		pass
+		loc = self.param['location'].split(',')
+		d = json.loads(self.otp_response)
+		for res in d['results']:
+			t = (res['lat'] == loc[0] and res['lng'] == loc[1])
+			self.assertTrue(t, msg="{0} returned an unexpected location".format(self.url))
+
+			
+class USFGraphMetaData(OTPTest):
+	""" Checks /otp/routers/default/metadata """
+
+	def __init__(self, methodName='runTest', param=None):		
+		self.param = param
+		self.url = "/routers/default/metadata"
+		super(USFGraphMetaData, self).__init__(methodName, param)		
+
+	def run(self, result=None):
+		self.setResponse("json")
+		super(USFGraphMetaData, self).run(result)
+						
+	def test_transit_modes(self):
+		if 'modes' not in self.param: self.skipTest('suppress')
 		
-	def test_exists(self):		
-		pass
+		d = json.loads(self.otp_response)
+		print d
+		d = d['graphMetadata']
+		self.assertTrue(self.param['modes'] in d['transitModes'], msg="Transit mode not found in metadata")
 		
-	def test_expect_value(self):
-		print self.otp_response
-		if 'expect_value' in self.param:
-			pass
+	def test_bounds(self):
+		""" test lowerLeft and upperRight against 'coords' """
+
+		if 'coords' not in self.param: self.skipTest('suppress')
+		
+		error = 0.2
+		high = [float(self.param['coords'][0]) * (1 + error)]
+		low = [float(self.param['coords'][0]) * (1 - error)]
+		
+		high[1] = float(self.param['coords'][1]) * (1 + error)
+		low[1] = float(self.param['coords'][1]) * (1 - error)
+		
+		d = json.loads(self.otp_response)
+		row = d['graphMetadata']
+		t = (row['lowerLeftLatitude'] >= low[0] and row['upperRightLatitude'] <= high[0])
+		t = t and (row['lowerLeftLongitude'] >= low[1] and row['upperRightLongitude'] <= high[1])
+			
+		self.assertTrue(t, msg="Graph bounds not within coordinate range")
+				
+
+class USFRouters(OTPTest):
+	""" Checks /otp/routers/default """
+
+	def __init__(self, methodName='runTest', param=None):		
+		self.param = param
+		self.url = "routers/default"
+		super(USFRouters, self).__init__(methodName, param)		
+		if methodName == 'test_result_too_small':
+			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) 
+
+	def run(self, result=None):
+		self.setResponse("json")
+		super(USFRouters, self).run(result)
+
+	def test_not_empty(self):
+		d = json.loads(self.otp_response)
+		self.assertNotEqual(len(d['polygon']), 0, msg="Graph polygon returned was empty")
+		
+'''		
+class USFTransit(OTPTest):
+	"""
+	http://docs.opentripplanner.org/apidoc/0.11.0/resource_TransitIndex.html
+	
+	agencyIds, calendar, modes, routeData, routes, routesBetweenStops, routesForStop
+	stopData, stopsByName, stopsInRectangle, stopsNearPoint, stopTimesForStop, stopTimesForTrip
+	tripsAtPosition, variantForTrip
+	"""	
+	
 '''
 
 			
@@ -395,6 +480,14 @@ class USFPlanner(OTPTest):
 		
 		self.assertEqual(len(bad), 0, msg="Invalid modes ({0}) found in itinerary.".format(', '.join(bad)))
 		
+	def test_mode_exists(self):
+		""" Ensure 'mode' param exists in legs """
+		if 'mode' not in self.param: self.skipTest('suppress')
+
+		all_modes = re.findall('<leg mode="(.*)" route', self.otp_response)
+		bad = list(set(all_modes) & set(self.param['mode'])) # intersection
+		
+		self.assertNotEqual(len(bad), 0, msg="Mode ({0}) NOT found in ({1}) itinerary.".format(self.param['mode'], ','.join(all_modes)))
 		
 	def test_no_errors(self):
 		""" """
@@ -426,13 +519,15 @@ class USFPlanner(OTPTest):
 			cnt = len(filter(lambda x: x == m, all_modes))
 					
 			self.assertLessEqual(cnt, self.param['max_legs'], msg="Route used too many legs for {0}".format(m))	
-		
-	# XXX optimize, time (depart/arrive)	
-	
-	def run(self, result=None):		
-		self.setResponse("xml") 
-		super(USFPlanner, self).run(result)
-		
+			
+'''
+@TODO test_arrive_by, test_depart_at (for testing 'date')
+@TODO maxWalkDistance respected
+@TODO specified 'preferredRoutes' and unpreferred
+@TODO optimize
+@TODO bike triangle routing
+@TODO wheelchair
+'''		
 
 class USFBikeRental(OTPTest):
 	""" Perform various tests on bike_rental API """	
@@ -463,15 +558,15 @@ class USFBikeRental(OTPTest):
 		high = [float(self.param['station_coordinates'][0]) * (1 + error)]
 		low = [float(self.param['station_coordinates'][0]) * (1 - error)]
 		
-		high[1] = float(self.param['station_coordinates'][1]) * (1 - error)
+		high[1] = float(self.param['station_coordinates'][1]) * (1 + error)
 		low[1] = float(self.param['station_coordinates'][1]) * (1 - error)
 		
 		d = json.loads(self.otp_response)
 		for row in d["stations"]:
-			t = (row['lat'] >= low[0] && row['lat'] <= high[0])
-			t = t && (row['lng'] >= low[1] && row['lng'] <= high[1])
+			t = (row['lat'] >= low[0] and row['lat'] <= high[0])
+			t = t and (row['lng'] >= low[1] and row['lng'] <= high[1])
 			
-			self.assert(t, msg="{0} station not within coordinate range".format(row['name']))
+			self.assertTrue(t, msg="{0} station not within coordinate range".format(row['name']))
 		
 	
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
@@ -544,7 +639,12 @@ if __name__ == "__main__":
 		i = 0
 		for row in reader:
 			i += 1
-			row = dict(row.items() + p.items()) # WILL OVERRIDE CSV SETTINGS
+			
+			# ITERATE CMD-LINE ARGS AND ADD TO PARAM DICT -- SKIP OVERRIDING CSV WITH DEFAULTS
+			for k in p:
+				if k in row and not p[k] == parser.get_default(k): row[k] = p[k] # XXX ENVVAR will now be 'default' and not override csv ...
+				elif k not in row: row[k] = p[k]
+
 			for k in row:
 				if row[k][0] == '[': row[k] = ast.literal_eval(row[k])
 
@@ -573,6 +673,7 @@ if __name__ == "__main__":
 	
 			report_data[s['file']]['run'] += line['result'].testsRun
 			desc = "%d (%s)" % (line['csv_line_number'], line['param']['description']) if 'description' in line['param'] else "%d" % line['csv_line_number']
+			report_data[s['file']]['param'] = line['param']
 			
 			# strip().split('\n')[-1] to remove full traceback
 			for r in line['result'].errors:		

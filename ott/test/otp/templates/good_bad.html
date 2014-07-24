@@ -78,15 +78,15 @@ dir = os.path.dirname(ts).split('/')[-1]
 %>
 
     <p>
-    <h2>${dir} ${name}</h2>
-
+    <h2>${dir} ${name} (${test_suites[ts]['param']['otp_url']})</h2>
+	
 	<div class="">
-	<!-- description, planner, map url -->
+	<!-- description, planner, map url -->	
 	Run: ${test_suites[ts]['run']} - Errors: ${len(test_suites[ts]['errors'])} - Skipped: ${len(test_suites[ts]['skipped'])} - Failures: ${len(test_suites[ts]['failures'])}
 	<br><br>
 	
 	% for test in test_suites[ts]:
-		% if not isinstance(test_suites[ts][test], int):
+		% if test <> 'param' and not isinstance(test_suites[ts][test], int):
 			<div class="${test}">
 			% for res in test_suites[ts][test]:		
 				${res} -> <code>${test_suites[ts][test][res]}</code><br>

@@ -81,8 +81,19 @@ USFBikeRental: Checks /otp/routers/default/bike_rental
 * test_bikes_available: Checks at least one station has bikes available
 * test_stations_coordinates: Checks no stations are outside a region 
 
-USFGeocoder:
+USFGeocoder: Checks /otp-geocoder/geocode (@NOTE GeocoderService.java is missing from 1.0.x)
 ============
+* test_count: Ensure count > 0
+* test_name: Ensure 'address' matches returned 'description'
+* test_expect_location: Ensure 'location' lat,lng == result lat lng
+
+USFGraphMetadata: Checks /otp/routers/default/metadata
+=================
+* test_bounds: Ensure lowerLeft, upperRight Lat/Lng are within bounds of 'coords'
+* test_transit_modes: Ensure 'modes' is in transitModes
+
+USFRouters: Checks /otp/routers/default
+* test_not_empty: Ensure 'polygon' returned isn't empty
 
 USFTransit: Check /routers/default/transit API (@NOTE TransitIndex.java is missing in 1.0.x currently)
 ===========
@@ -97,8 +108,7 @@ GTFSTripUpdates: Check /trip-updates?debug
 GTFSVehicleUpdates: Check /vehicle-positions?debug
 * test_vehicles_available: Ensure some "entity {" property trees are returned
 
-@TODO OSM data, tiles?
-@TODO routers/default/metadata (graph info)
+@TODO OSM data, leaflet, tiles?
 
 Each CSV file can also specify the following to override defaults, but not command-line arguments:
 * otp_url
