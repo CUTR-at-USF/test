@@ -3,8 +3,10 @@ USF OpenTripPlanner Testing Framework
 
 Requirements:
 =============
-* mako
 * Python 2.7+ (standard library - unittest, etc)
+* mako
+* gdata-2.0.18 (https://code.google.com/p/gdata-python-client/downloads/list)
+* oauth2client (https://pypi.python.org/pypi/oauth2client/1.2)
 
 Usage:
 ======

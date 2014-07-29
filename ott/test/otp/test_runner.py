@@ -5,7 +5,8 @@ Usage:
 
 Requirements:
 mako
-
+gdata-2.0.18
+oauth2client
 """
 
 import os
@@ -26,6 +27,10 @@ import argparse
 import unittest
 import json
 
+import gdata.spreadsheets.client
+import gdata.gauth	
+
+ 
 def envvar(name, defval=None, suffix=None):
     """ envvar interface -- TODO: put this in a utils api
     """
@@ -634,6 +639,55 @@ def find_tests(path, tests, skip=[]):
 				
 	return tests
 
+def load_csv_by_file(file):
+	pass
+	
+def load_csv_by_url(url, args=""):
+	"Returns a list of regions from the specified spreadsheet URL."
+	
+	# Do OAuth2 stuff to create credentials object
+	from oauth2client.file import Storage
+	from oauth2client.client import flow_from_clientsecrets
+	from oauth2client.tools import run_flow, argparser 
+	
+	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, parents=[argparser])
+	flags = parser.parse_args(args)
+	
+	storage = Storage("creds.dat")
+	credentials = storage.get()
+	if credentials is None or credentials.invalid:
+		credentials = run_flow(flow_from_clientsecrets("client_secrets.json", scope=["https://spreadsheets.google.com/feeds"]), storage, flags)
+	elif credentials.access_token_expired:
+		credentials.refresh()
+		print "Refreshed"
+		print credentials
+		
+	token = gdata.gauth.OAuth2TokenFromCredentials(credentials)
+	gclient = gdata.spreadsheets.client
+	g = gclient.SpreadsheetsClient()
+
+	sheets = g.get_worksheets(url, auth_token=token)
+	cnt = 0
+	data = {}
+	
+	for sheet in enumerate(sheets.entry):
+		id = sheet[1].get_worksheet_id()
+		logging.info("Sheet %s (%s)" % (sheet[1].title.text, id))
+		
+		data[sheet[1].title.text] = []
+		cnt = cnt + 1
+		
+		w = g.get_worksheet(url, id, auth_token=token)
+		if w.row_count.text <= 0 or w.col_count.text <= 0: continue
+		
+		feed = g.GetListFeed(url, id, auth_token=token)
+		for row in enumerate(feed.entry):
+			data[sheet[1].title.text].append( row[1].to_dict() )
+				
+	print "%d sheets loaded" % cnt
+	
+	return data
+
 	
 # MAIN CODE
 
@@ -643,8 +697,12 @@ if __name__ == "__main__":
 	parser.add_argument('-o', '--otp-url', help="OTP REST Endpoint URL")
 	parser.add_argument('-m', '--map-url', help="OTP Map URL")
 	
+	parser.add_argument('-R', '--remote', action='store_true', help="Enable fetching CSV parameters remotely from Google Spreadsheet")
+	parser.add_argument('-U', '--url', help="URL/Key to Google Spreadsheet with suite parameters (implies -R)")
+	
 	parser.add_argument('-t', '--template-path', help="Path to test suite template(s)")
 	parser.add_argument('-c', '--csv-path', help="Path to test suite CSV file(s)")
+	
 	parser.add_argument('-r', '--report-path', help="Path to write test suite report(s)")
 	#parser.add_argument('-b', '--base-dir', help="Base directory for file operations")
 	
@@ -662,6 +720,7 @@ if __name__ == "__main__":
 	template_path=envvar('OTP_TEMPLATE', './templates/good_bad.html'), 
 	csv_path=envvar('OTP_CSV_DIR', './suites/'),
 	report_path=envvar('OTP_REPORT', './report/otp_report.html'),
+	url="1f_CTDgQfey5mY1eMO03D7UZ8855D-mxHsfYfsA3c4Zw", # Google doc key to USF file
 	log_level="WARNING",
 	skip_class=[None])
 	
@@ -681,6 +740,13 @@ if __name__ == "__main__":
 	# set base parameters for tests
 	p = {'otp_url':args.otp_url}
 	if args.date is not None: p['date'] = args.date
+		
+	# gid=# sheet	
+	#url = "https://docs.google.com/feeds/download/spreadsheets/Export?key={0}&exportFormat=csv".format(args.url)
+	
+	# Load test parameters via google sheet
+	print load_csv_by_url(args.url)
+	sys.exit(0)
 	
 	test_suites = find_tests(args.csv_path, [], args.skip_class)	
 	
