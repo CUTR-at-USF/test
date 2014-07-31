@@ -71,7 +71,9 @@ class Test(unittest.TestCase):
 	def __init__(self, methodName="runTest", param=None):
 		super(Test, self).__init__(methodName)
 		self.param = param
-			
+
+	# XXX param req_TESTCLASS_TESTMETHOD and skip if fails
+	
 	@staticmethod
 	def add_with_param(class_name, param=None):
 		loader = unittest.TestLoader()
@@ -616,41 +618,42 @@ class USFBikeRental(OTPTest):
 		
 	
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
-def find_tests(path, tests, skip=[]):
+def find_tests(path, tests):
 	files=os.listdir(path)
 	for f in files:
 		if os.path.isdir(path + "/" + f) and f[0] != '.':			
-			tmp = find_tests(path + "/" + f, [], skip)
+			tmp = find_tests(path + "/" + f, [])
 			if len(tmp) > 0: tests += tmp 
 			continue
 			
 		if f.lower().endswith('.csv'):
-			obj = {'file': path + "/" + f, "lines":[]}
-			
 			cls = path.split('/')[-1]
-			if cls.lower() in skip: continue
 			
-			if len(cls) > 0: 
-				for m in globals(): # XXX tests namespace
-					if hasattr(globals()[m], cls) or m.lower() == cls.lower():
-						obj['cls'] = globals()[m] 
-						tests.append(obj)
-						break
+			obj = {'file': path + "/" + f, "lines":[], 'name': cls}
+						
+			if len(cls) > 0:
+				obj['cls'] = find_test_class(cls)
+				if obj['cls'] is not None: 
+					tests.append(obj)
+					break
 				
 	return tests
 
-def load_csv_by_file(file):
-	pass
+def find_test_class(cls):
+	for m in globals(): # XXX tests namespace
+		if hasattr(globals()[m], cls) or m.lower() == cls.lower():
+			return globals()[m] 						
+	return None
 	
-def load_csv_by_url(url, args=""):
-	"Returns a list of regions from the specified spreadsheet URL."
+def load_csv_by_url(url, args="", parser=None):
+	"Returns a list of suites from the specified spreadsheet URL."
 	
 	# Do OAuth2 stuff to create credentials object
 	from oauth2client.file import Storage
 	from oauth2client.client import flow_from_clientsecrets
 	from oauth2client.tools import run_flow, argparser 
 	
-	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, parents=[argparser])
+	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, parents=[argparser, parser], conflict_handler='resolve')
 	flags = parser.parse_args(args)
 	
 	storage = Storage("creds.dat")
@@ -658,9 +661,9 @@ def load_csv_by_url(url, args=""):
 	if credentials is None or credentials.invalid:
 		credentials = run_flow(flow_from_clientsecrets("client_secrets.json", scope=["https://spreadsheets.google.com/feeds"]), storage, flags)
 	elif credentials.access_token_expired:
-		credentials.refresh()
+		import httplib2
+		credentials.refresh(httplib2.Http())
 		print "Refreshed"
-		print credentials
 		
 	token = gdata.gauth.OAuth2TokenFromCredentials(credentials)
 	gclient = gdata.spreadsheets.client
@@ -668,22 +671,42 @@ def load_csv_by_url(url, args=""):
 
 	sheets = g.get_worksheets(url, auth_token=token)
 	cnt = 0
-	data = {}
+	data = []
 	
 	for sheet in enumerate(sheets.entry):
 		id = sheet[1].get_worksheet_id()
+				
 		logging.info("Sheet %s (%s)" % (sheet[1].title.text, id))
 		
-		data[sheet[1].title.text] = []
+		cls = find_test_class(sheet[1].title.text)
+		if cls is None: continue
+		
+		tmp = {"data":[], 'cls':cls, 'file':sheet[1].title.text, 'name':sheet[1].title.text}
 		cnt = cnt + 1
 		
 		w = g.get_worksheet(url, id, auth_token=token)
 		if w.row_count.text <= 0 or w.col_count.text <= 0: continue
 		
-		feed = g.GetListFeed(url, id, auth_token=token)
+		# have to get column names via get_cells because the listfeed auto-changes names
+		fn = []
+		col = []
+		feed = g.get_cells(url, id, auth_token=token)
 		for row in enumerate(feed.entry):
-			data[sheet[1].title.text].append( row[1].to_dict() )
+			if row[1].cell.row == "1": fn.append(row[1].cell.text)
+			else: col.append(row[1].cell.text)
 				
+			if len(col) == len(fn):
+				tmp["data"].append( dict(zip(fn, col)) )
+				col = []
+		
+		"""
+		feed = g.GetListFeed(url, id, auth_token=token)
+		for row in enumerate(feed.entry):		
+			tmp["data"].append( dict(zip(fn, row[1].to_dict().values())) )
+		"""
+		
+		data.append( tmp )
+		
 	print "%d sheets loaded" % cnt
 	
 	return data
@@ -707,11 +730,14 @@ if __name__ == "__main__":
 	#parser.add_argument('-b', '--base-dir', help="Base directory for file operations")
 	
 	parser.add_argument('--date', help="Set date for service tests")
+	
 	# XXX maybe disable cache for call_otp?
 	#parser.add_argument('-s', '--stress', action='store_true', help="Enable stress testing mode (XXX)")
+	
 	parser.add_argument('-d', '--debug', action='store_true', help="Enable debug mode")
 	parser.add_argument('--log-level', help="Set log level (Accepted: CRITICAL, ERROR, WARNING (default), INFO, DEBUG) ")
 	# XXX silent level?
+	
 	parser.add_argument('--skip', dest='skip_class', help="Comma-delimited list of test name(s) to skip")
 	
 	parser.set_defaults(
@@ -726,8 +752,10 @@ if __name__ == "__main__":
 	
 	args = parser.parse_args(sys.argv[1:]) # XXX skip interpreter if given ... works on linux? 
 	
+	# accept comma-delimited string of classes to skip
 	if not isinstance(args.skip_class, list): args.skip_class = args.skip_class.lower().split(',')
 	
+	# set log level
 	try:
 		lev = getattr(logging, args.log_level)
 	except:
@@ -737,36 +765,44 @@ if __name__ == "__main__":
 	
 	logging.basicConfig(level=lev)
 	
-	# set base parameters for tests
+	# set base parameters for tests from environment
 	p = {'otp_url':args.otp_url}
 	if args.date is not None: p['date'] = args.date
-		
-	# gid=# sheet	
-	#url = "https://docs.google.com/feeds/download/spreadsheets/Export?key={0}&exportFormat=csv".format(args.url)
 	
-	# Load test parameters via google sheet
-	print load_csv_by_url(args.url)
-	sys.exit(0)
-	
-	test_suites = find_tests(args.csv_path, [], args.skip_class)	
-	
-	# read CSV and add all tests to suite
-	for s in test_suites:
-		file = open(s['file'], 'r')
-		reader = csv.DictReader(file)
-		fn = reader.fieldnames
+	# Load test parameters via google sheet	
+	if args.remote is True or args.url <> parser.get_default("url"):
+		test_suites = load_csv_by_url(args.url, sys.argv[1:], parser)		
+	else: 
+		# Load tests from CSV files on disk
+		test_suites = find_tests(args.csv_path, [])	
+		for s in test_suites:
+			file = open(s['file'], 'r')
+			reader = csv.DictReader(file)
+			fn = reader.fieldnames
+			i = 0
+			s["data"] = []
+			for row in reader: s["data"].append(row)
+
+	for key,s in enumerate(test_suites):
 		i = 0
-		for row in reader:
+		s["lines"] = []
+		for row in s['data']:
 			i += 1
+
+			# Skip test class if user chose to
+			if s['name'].lower() in args.skip_class: continue
 			
-			# ITERATE CMD-LINE ARGS AND ADD TO PARAM DICT -- SKIP OVERRIDING CSV WITH DEFAULTS
+			# Override CSV parameters with cmd-line (unless they are defaults), and perform other initialization			
 			for k in p:
 				if k in row and not p[k] == parser.get_default(k): row[k] = p[k] # XXX ENVVAR will now be 'default' and not override csv ...
 				elif k not in row: row[k] = p[k]
 
+			# Convert strings into python literals where applicable (lists)
 			for k in row:
 				if row[k][0] == '[': row[k] = ast.literal_eval(row[k])
-
+			
+			# Create TestSuites from loaded TestCases
+				
 			obj = {}
 			obj['suite'] = unittest.TestSuite()
 			obj['result'] = unittest.TestResult()
@@ -775,7 +811,9 @@ if __name__ == "__main__":
 			# s.addTests( OTPVersion.add_with_param(OTPVersion, {'major':1, 'minor':0}) )
 			obj['suite'].addTests( s['cls'].add_with_param(s['cls'], row ) ) 
 			s['lines'].append( obj )
-				
+	
+	# RUN TESTS
+	
 	report_data = {}
 	failures = 0
 
@@ -803,6 +841,10 @@ if __name__ == "__main__":
 				
 	
 	# REPORT
+	
+	# XXX load template from google doc?
+	
+	# XXX save report to google doc/sheet?
 	
 	report_template = Template(filename=args.template_path)
 	r = report_template.render(test_suites=report_data, all_passed = True if failures <= 0 else False)
