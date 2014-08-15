@@ -485,24 +485,26 @@ class USFPlanner(OTPTest):
 	def test_invalid_modes(self):
 		""" if any mode is present in a leg from invalid_modes, this test fails """
 		
-		if 'invalid_modes' not in self.param: self.skipTest('suppress')
+		if not self.check_param('invalid_modes'): self.skipTest('suppress')
 
-		all_modes = re.findall('<leg mode="(.*)" route', self.otp_response)
+		all_modes = re.findall('<leg mode="(.*?)" route', self.otp_response)
 		bad = list(set(all_modes) & set(self.param['invalid_modes'])) # intersection
 		
 		self.assertEqual(len(bad), 0, msg="Invalid modes ({0}) found in itinerary.".format(', '.join(bad)))
 		
 	def test_mode_exists(self):
 		""" Ensure 'mode' param exists in legs """
-		if 'mode' not in self.param: self.skipTest('suppress')
+		
+		if not self.check_param('mode'): self.skipTest('suppress')
 
-		all_modes = re.findall('<leg mode="(.*)" route', self.otp_response)
+		all_modes = re.findall('<leg mode="(.*?)" route', self.otp_response)
 		bad = list(set(all_modes) & set(self.param['mode'])) # intersection
 		
 		self.assertNotEqual(len(bad), 0, msg="Mode ({0}) NOT found in ({1}) itinerary.".format(self.param['mode'], ','.join(all_modes)))
 		
 	def test_no_errors(self):
-		""" """
+		""" Ensure no errors were returned """
+		
 		regres = re.findall("<error><id>(.*)</id>", self.otp_response)
 		if len(regres) > 0: errnum = regres[0]
 		else: errnum = ''
@@ -572,9 +574,9 @@ class USFPlanner(OTPTest):
 	def test_max_walk(self):
 		""" Ensure maxWalkDistance is respected for route """
 		
-		if 'max_walk' not in self.param: self.skipTest('suppress')
+		if not self.check_param('max_walk'): self.skipTest('suppress')
 		
-		all_walk = re.findall('<walkDistance>(.*)<\/walkDistance>', self.otp_response)
+		all_walk = re.findall('<walkDistance>(.*?)<\/walkDistance>', self.otp_response)
 				
 		for m in all_walk:		
 			self.assertLess(m, self.param['max_walk'], msg="{0} exceeded max_walk distance: {1} < {2}".format(self.url, self.param['max_walk'], m))
@@ -700,13 +702,14 @@ def load_csv_by_url(url, args="", parser=None):
 		col = []
 		feed = g.get_cells(url, id, auth_token=token)
 		for row in enumerate(feed.entry):
+			if row[1].cell.text == "-": row[1].cell.text = "" # workaround for get_cells() skipping blank cells
 			if row[1].cell.row == "1": fn.append(row[1].cell.text)
-			else: col.append(row[1].cell.text)
-				
+			else: col.append(row[1].cell.text)			
+		
 			if len(col) == len(fn):
 				tmp["data"].append( dict(zip(fn, col)) )
 				col = []
-		
+
 		"""
 		feed = g.GetListFeed(url, id, auth_token=token)
 		for row in enumerate(feed.entry):		
@@ -835,15 +838,20 @@ if __name__ == "__main__":
 			desc = "%d (%s)" % (line['csv_line_number'], line['param']['description']) if 'description' in line['param'] else "%d" % line['csv_line_number']
 			report_data[s['file']]['param'] = line['param']
 			
-			# strip().split('\n')[-1] to remove full traceback
-			for r in line['result'].errors:		
-				report_data[s['file']]['errors']["%s:%s" % (r[0].id().split('.')[-1], desc)] = r[1] 
+			for r in line['result'].errors:	
+				if not args.debug: tmp = r[1].strip().split('\n')[-1] # if not debug, only get last line (the assertionerror)
+				else: tmp = r[1]
+				report_data[s['file']]['errors']["%s:%s" % (r[0].id().split('.')[-1], desc)] = tmp
 		
 			for r in line['result'].failures:
-				report_data[s['file']]['failures']["%s:%s" % (r[0].id().split('.')[-1], desc)] = r[1]
+				if not args.debug: tmp = r[1].strip().split('\n')[-1] # if not debug, only get last line (the assertionerror)
+				else: tmp = r[1]
+				report_data[s['file']]['failures']["%s:%s" % (r[0].id().split('.')[-1], desc)] = tmp
 	
 			for r in line['result'].skipped:		
-				report_data[s['file']]['skipped']["%s:%s" % (r[0].id().split('.')[-1], desc)] = r[1]
+				if not args.debug: tmp = r[1].strip().split('\n')[-1] # if not debug, only get last line (the assertionerror)
+				else: tmp = r[1]
+				report_data[s['file']]['skipped']["%s:%s" % (r[0].id().split('.')[-1], desc)] = tmp
 		
 			failures += len(line['result'].failures)		
 				
