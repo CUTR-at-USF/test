@@ -83,6 +83,11 @@ class Test(unittest.TestCase):
 			suite.addTest(class_name(methodName=name, param=param))
 		return suite
 
+	def check_param(self, name):
+		if name in self.param and len(self.param[name]) > 0: return True
+		
+		return False
+
 		
 class OneBusAway(Test):
 	"""
@@ -92,7 +97,7 @@ class OneBusAway(Test):
 	"""
 
 	def __init__(self, methodName='runTest', param=None):
-		u = self.param['otp_url'] if 'otp_url' in self.param else "http://localhost:8088/" 
+		u = self.param['server'] if 'server' in self.param else "http://localhost:8088/" 
 		if hasattr(self, 'url'): self.url = u + self.url
 		else: self.url = u
 		
@@ -272,7 +277,7 @@ class OTPVersion(OTPTest):
 		super(OTPVersion, self).run(result)
 	
 	def test_version(self):
-		if 'major' not in self.param or 'minor' not in self.param: self.skipTest("suppress")
+		if not self.check_param('major') or not self.check_param('minor'): self.skipTest("suppress")
 		
 		d = json.loads(self.otp_response)
 				
@@ -304,7 +309,7 @@ class USFGeocoder(OTPTest):
 		self.assertGreaterEqual(d['count'], 1, msg="{0} returned no geocode results".format(self.url))		
 	
 	def test_name(self):
-		if 'address' not in self.param: self.skipTest('suppress')
+		if not self.check_param('address'): self.skipTest('suppress')
 		
 		d = json.loads(self.otp_response)
 		for res in d['results']:
@@ -315,7 +320,7 @@ class USFGeocoder(OTPTest):
 		self.assertEqual(d['error'], None, msg="{0} returned an error {1}".format(self.url, d['error']))
 		
 	def test_expect_location(self):
-		if 'location' not in self.param: self.skipTest('suppress')
+		if not self.check_param('location'): self.skipTest('suppress')
 
 		loc = self.param['location'].split(',')
 		d = json.loads(self.otp_response)
@@ -339,7 +344,7 @@ class USFGraphMetaData(OTPTest):
 		super(USFGraphMetaData, self).run(result)
 						
 	def test_transit_modes(self):
-		if 'modes' not in self.param: self.skipTest('suppress')
+		if not self.check_param('modes'): self.skipTest('suppress')
 		
 		d = json.loads(self.otp_response)
 		self.assertTrue(self.param['modes'] in d['transitModes'], msg="Transit mode not found in metadata")
@@ -347,7 +352,7 @@ class USFGraphMetaData(OTPTest):
 	def test_bounds(self):
 		""" test lowerLeft and upperRight against 'coords' """
 
-		if 'coords' not in self.param: self.skipTest('suppress')
+		if not self.check_param('coords'): self.skipTest('suppress')
 		
 		error = 0.2
 		high = [float(self.param['coords'][0]) * (1 + error)]
@@ -434,14 +439,14 @@ class USFPlanner(OTPTest):
 		return date
 		
 	def test_expected_output(self):
-		if 'expected_output' not in self.param: self.skipTest('suppress')
+		if not self.check_param('expected_output'): self.skipTest('suppress')
 					                
 		regres = re.search(self.param['expected_output'], self.otp_response)
 		
 		self.assertNotEqual(regres, None, msg="Couldn't find {0} in otp response.".format(self.param['expected_output']))
   
 	def test_trip_duration(self):
-		if 'duration' not in self.param: self.skipTest('suppress')
+		if not self.check_param('duration'): self.skipTest('suppress')
 		
 		durations = re.findall('<itinerary>.*?<duration>(.*?)</duration>.*?</itinerary>', self.otp_response) 
 		error = 0.2
@@ -452,7 +457,7 @@ class USFPlanner(OTPTest):
 			self.assertFalse(t, msg="An itinerary duration was different than expected by more than {0}%.".format(error * 100))
 		
 	def test_trip_distance(self):
-		if 'distance' not in self.param: self.skipTest('suppress')
+		if not self.check_param('distance'): self.skipTest('suppress')
 		
 		distances = re.findall('<itinerary>.*?<distance>(.*?)</distance>.*?</itinerary>', self.otp_response) 
 		error = 0.2
@@ -463,7 +468,7 @@ class USFPlanner(OTPTest):
 			self.assertFalse(t, msg="An itinerary distance was different than expected by more than {0}%.".format(error * 100))
 	
 	def test_trip_num_legs(self):
-		if 'num_legs' not in self.param: self.skipTest('suppress')
+		if not self.check_param('num_legs'): self.skipTest('suppress')
 		
 		legs = self.param['num_legs'].split("|")
 		if len(legs) <> 2: raise ValueError("num_legs must be in min|max format")
@@ -506,8 +511,9 @@ class USFPlanner(OTPTest):
 		
 	# BUS CHECK
 	def test_use_preferred_bus_route(self):
-		""" ensure a given route is chosen """
-		if 'use_bus_route' not in self.param: self.skipTest('suppress')
+		""" Ensure a given route is chosen """
+		
+		if not self.check_param('use_bus_route'): self.skipTest('suppress')
 		if not isinstance(self.param['use_bus_route'], list): self.param['use_bus_route'] = list(self.param['use_bus_route'])
 		
 		all_modes = re.findall('<leg mode="BUS" route="(.*)"', self.otp_response)
@@ -518,8 +524,9 @@ class USFPlanner(OTPTest):
 	# @TODO specified 'mode', 'preferredRoutes' and unpreferred
 	
 	def test_max_legs(self):
-		""" ensure # of modes are not excessive (multiple bus/car legs etc) """
-		if 'max_legs' not in self.param: self.skipTest('suppress')
+		""" Ensure # of modes are not excessive (multiple bus/car legs etc) """
+		
+		if not self.check_param('max_legs'): self.skipTest('suppress')
 		
 		all_modes = re.findall('<leg mode="(.*)" route', self.otp_response)
 		
@@ -532,7 +539,8 @@ class USFPlanner(OTPTest):
 	def test_arrive_by(self):
 		# arriveBy=true
 		# time.struct_time(tm_year=2014, tm_mon=7, tm_mday=7, tm_hour=7, tm_min=41, tm_sec=34, tm_wday=0, tm_yday=188, tm_isdst=-1)
-		if 'arrive_time' not in self.param: self.skipTest('suppress')
+		
+		if not self.check_param('arrive_time'): self.skipTest('suppress')
 		if self.param['arriveBy'] == "false": self.skipTest("did not request arrival time")
 		
 		all_times = re.findall('<endTime>(.*)<\/endTime>', self.otp_response)
@@ -548,7 +556,7 @@ class USFPlanner(OTPTest):
 	def test_depart_at(self):
 		# time, date, arriveBy=false 2014-07-07T07:41:34-04:00
 		# time.struct_time(tm_year=2014, tm_mon=7, tm_mday=7, tm_hour=7, tm_min=41, tm_sec=34, tm_wday=0, tm_yday=188, tm_isdst=-1)
-		if 'depart_time' not in self.param: self.skipTest('suppress')
+		if not self.check_param('depart_time'): self.skipTest('suppress')
 		if self.param['arriveBy'] <> "false": self.skipTest("did not request departure time")
 		
 		all_times = re.findall('<startTime>(.*)<\/startTime>', self.otp_response)
@@ -600,7 +608,7 @@ class USFBikeRental(OTPTest):
 			break # at least one has to pass
 			
 	def test_stations_coordinates(self):
-		if 'station_coordinates' not in self.param: self.skipTest('suppress')
+		if not self.check_param('station_coordinates'): self.skipTest('suppress')
 		
 		error = 0.2
 		high = [float(self.param['station_coordinates'][0]) * (1 + error)]
@@ -799,7 +807,7 @@ if __name__ == "__main__":
 
 			# Convert strings into python literals where applicable (lists)
 			for k in row:
-				if row[k][0] == '[': row[k] = ast.literal_eval(row[k])
+				if len(row[k]) > 0 and row[k][0] == '[': row[k] = ast.literal_eval(row[k])
 			
 			# Create TestSuites from loaded TestCases
 				
