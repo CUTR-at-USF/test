@@ -78,15 +78,78 @@ class Test(unittest.TestCase):
 	def add_with_param(class_name, param=None):
 		loader = unittest.TestLoader()
 		names = loader.getTestCaseNames(class_name)
-		suite = unittest.TestSuite()
+		
+		suite = unittest.TestSuite()	
+				
+		# req_TESTNAME_TESTMETHOD conditional dependencies
+		reqsuite = unittest.TestSuite()		
+		reqres = unittest.TestResult()		
+		for key in param.keys():
+			if key[0:4] <> "req_": continue
+			depends = key.split("_")			
+			if depends[1] == class_name: continue # try to prevent circular dependencies
+			tmp_cls = find_test_class(depends[1])
+			# class is depends[1] (cannot contain '_')			
+			methods = loader.getTestCaseNames(tmp_cls)
+			for m in methods:								
+				if m <> param[key]: continue # XXX should we do this, or run all tests?
+				reqsuite.addTest(tmp_cls(methodName=m, param=param))
+
+		for t in reqsuite:
+			t.run( reqres )
+
+		if reqres.testsRun > 0 and (reqres.errors > 0 or reqres.failures > 0): skip_tests = True
+		else: skip_tests = False
+		
 		for name in names:
-			suite.addTest(class_name(methodName=name, param=param))
+			tmp = class_name(methodName=name, param=param)
+			tmp.set_dependency_check(skip_tests)
+			suite.addTest(tmp)
+			
 		return suite
 
+	def set_dependency_check(self, skip):
+		self.skip_tests = skip
+		
+	def run(self, result=None):
+		if hasattr(self, 'skip_tests') and self.skip_tests is True: 
+			self._addSkip(result, "dependency check failed")
+		else: super(Test, self).run(result)		
+		
 	def check_param(self, name):
-		if name in self.param and len(self.param[name]) > 0: return True
+		t = name in self.param and len(self.param[name]) > 0
+		
+		if t: return True
 		
 		return False
+
+class UITest(Test):
+	""" Selenium-based tests for client-side functions """
+	
+	def __init__(self, methodName='runTest', param=None):
+		super(UITest, self).__init__(methodName, param)
+		
+	def run(self, result=None):
+	
+		super(UITest, self).run(result)
+
+"""
+# docs.seleniumhq.org/docs/03_webdriver.jsp
+from selenium import webdriver
+#browser = webdriver.ie.webdriver.WebDriver()
+browser = webdriver.firefox.webdriver.WebDriver()
+browser.get("http://yahoo.com/")
+print browser.title
+sys.exit(0)
+"""
+
+# waitForPageToLoad
+# find_element_by_name, send_keys, submit()
+# send_keys
+# findElement, isDisplayed
+# verifyText
+# execute_script("return ..")
+
 
 		
 class OneBusAway(Test):
@@ -104,10 +167,11 @@ class OneBusAway(Test):
 		super(OneBusAway, self).__init__(methodName, param)
 		
 	def run(self, result=None):
-						
+		
 		self.call_api(self.url)		
 				
 		super(OneBusAway, self).run(result)
+		
 			
 	def call_api(self, url):
 		""" 
@@ -135,7 +199,9 @@ class OneBusAway(Test):
 				
 				cache_set(self.url, self.api_response)
 			except Exception as ex:
-				self.fail(msg="{0} failed - Exception: {1}".format(url, str(ex)))
+				self.api_response = ""
+				self.response_time = 0
+				#self.fail(msg="{0} failed - Exception: {1}".format(url, str(ex)))
 	
 		self.assertLessEqual(self.response_time, 30, msg="%s took *longer than 30 seconds*" % url)
 
@@ -159,11 +225,11 @@ class OTPTest(Test):
 		
 		super(OTPTest, self).__init__(methodName, param)
 		
-	def run(self, result=None):
-		self.url = self.url + self.url_params(self.param)		
-						
+	def run(self, result=None):		
+		self.url = self.url # + self.url_params(self.param)		
+		
 		self.call_otp(self.url)		
-				
+		
 		super(OTPTest, self).run(result)
 		
 	def setResponse(self, type):
@@ -196,7 +262,9 @@ class OTPTest(Test):
 				
 				cache_set(self.url, self.otp_response)
 			except Exception as ex:				
-				self.fail(msg="{0} failed - Exception: {1}".format(url, str(ex)))
+				self.otp_response = ""
+				self.response_time = 0
+				#self.fail(msg="{0} failed - Exception: {1}".format(url, str(ex)))
 	
 		self.assertLessEqual(self.response_time, 30, msg="%s took *longer than 30 seconds*" % url)
 
@@ -272,8 +340,8 @@ class OTPVersion(OTPTest):
 		# can self.skipTest(reason) here
 		pass
 		
-	def run(self, result=None):		
-		self.setResponse("json")		
+	def run(self, result=None):	
+		self.setResponse("json")	
 		super(OTPVersion, self).run(result)
 	
 	def test_version(self):
@@ -282,7 +350,7 @@ class OTPVersion(OTPTest):
 		d = json.loads(self.otp_response)
 				
 		t = int(self.param['major']) == d['serverVersion']['major'] and int(self.param['minor']) ==  d['serverVersion']['minor']
-			
+		
 		self.assertTrue(t, msg="OTP version mismatch - {0} != {1}".format("%d.%d" % (int(self.param['major']), int(self.param['minor'])), "%d.%d" % (d['serverVersion']['major'], d['serverVersion']['minor'])))
 			
 			
@@ -607,7 +675,7 @@ class USFBikeRental(OTPTest):
 		d = json.loads(self.otp_response)
 		for row in d["stations"]:
 			self.assertGreater(len(row['bikes']), 0, msg="{0} - has no bikes available".format(row['name']))
-			break # at least one has to pass
+			break # at least one has to pass XXX
 			
 	def test_stations_coordinates(self):
 		if not self.check_param('station_coordinates'): self.skipTest('suppress')
@@ -626,7 +694,7 @@ class USFBikeRental(OTPTest):
 			
 			self.assertTrue(t, msg="{0} station not within coordinate range".format(row['name']))
 		
-	
+
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
 def find_tests(path, tests):
 	files=os.listdir(path)
@@ -828,8 +896,12 @@ if __name__ == "__main__":
 	report_data = {}
 	failures = 0
 
-	for s in test_suites:				
-		if s['file'] not in report_data: report_data[s['file']] = {'run':0, 'skipped':{}, 'failures':{}, 'errors':{}}
+	for s in test_suites:		
+				
+		# Skip test class if user chose to
+		if s['name'].lower() in args.skip_class: continue
+		
+		if s['file'] not in report_data: report_data[s['file']] = {'run':0, 'skipped':{}, 'failures':{}, 'errors':{}, 'param': {}}
 		
 		for line in s['lines']:
 			line['suite'].run(line['result'])
@@ -854,7 +926,7 @@ if __name__ == "__main__":
 				report_data[s['file']]['skipped']["%s:%s" % (r[0].id().split('.')[-1], desc)] = tmp
 		
 			failures += len(line['result'].failures)		
-				
+	
 	
 	# REPORT
 	
