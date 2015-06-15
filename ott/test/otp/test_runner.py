@@ -20,6 +20,7 @@ import csv
 import re
 import socket
 import urllib2
+import urllib
 from mako.template import Template
 
 import ast
@@ -255,196 +256,219 @@ class OTPTest(Test):
 				res.close()
 				end = time.time()
 				self.response_time = end - start
-			
+
 				logging.info("call_otp: response time of " + str(self.response_time) + " seconds for url " + url)
 				logging.debug("call_otp: OTP output for " + url)
 				logging.debug(self.otp_response)
-				
+
 				cache_set(self.url, self.otp_response)
-			except Exception as ex:				
+			except Exception as ex:
 				self.otp_response = ""
 				self.response_time = 0
 				#self.fail(msg="{0} failed - Exception: {1}".format(url, str(ex)))
-	
+
 		self.assertLessEqual(self.response_time, 30, msg="%s took *longer than 30 seconds*" % url)
 
 	# Basic tests for all OTP calls
 	def test_result_not_null(self):
 		self.assertNotEqual(self.otp_response, None, msg="{0} - result is null".format(self.url))
-	
+
 	def test_result_too_small(self):
 		self.assertGreater(len(self.otp_response), 1000, msg="{0} - result looks small".format(self.url))
-		
+
 	def url_params(self, params):
 		""" From query parameters, create OTP-compatible URL """
 		url = []
-				
+
 		otp_params = ['address', 'bbox', 'fromPlace', 'toPlace', 'maxWalkDistance', 'mode', 'optimize', 'arriveBy', 'departBy', 'date', 'time', 'showIntermediateStops']
 		for i in params:
 			if i not in otp_params: continue
+			params[i] = urllib.quote(params[i]) # XXX
 			url.append("{0}={1}".format(i, params[i]))
-				
+
 		return '&'.join(url)
 
-	
+
 # BEGIN TESTCASES #
 
 
 class GTFSVehiclePositions(OneBusAway):
 
 		def __init__(self, methodName='runTest', param=None):
-			self.methodName = methodName		
+			self.methodName = methodName
 			self.param = param
 			super(GTFSVehiclePositions, self).__init__(methodName, param)
-		
+
 		def run(self, result=None):
 			self.url = self.url + "vehicle-positions?debug"
-			
+
 			super(GTFSVehiclePositions, self).run(result)
-			
+
 		def test_vehicles_available(self):
 			t = re.findall("entity {", self.api_response)
-			
+
 			self.assertGreater(len(t), 0, msg="{0} has no vehicle positions available".format(self.url))
+
+		# XXX sanity check the data ... start times not equal, at least X minutes apart, etc...
 
 class GTFSTripUpdates(OneBusAway):
 
 		def __init__(self, methodName='runTest', param=None):
-			self.methodName = methodName		
+			self.methodName = methodName
 			self.param = param
 			super(GTFSTripUpdates, self).__init__(methodName, param)
-		
+
 		def run(self, result=None):
 			self.url = self.url + "trip-updates?debug"
-			
+
 			super(GTFSTripUpdates, self).run(result)
-			
+
 		def test_trips_available(self):
-		
+
 			t = re.findall("entity {", self.api_response)
-			
-			self.assertGreater(len(t), 0, msg="{0} has no trips available".format(self.url))			
-										
+
+			self.assertGreater(len(t), 0, msg="{0} has no trips available".format(self.url))
+
 
 class OTPVersion(OTPTest):
 	""" Check /otp/ serverInfo endpoint for various information """
-	
+
 	def __init__(self, methodName='runTest', param=None):
-		self.methodName = methodName		
+		self.methodName = methodName
 		self.param = param
 		super(OTPVersion, self).__init__(methodName, param)
 		if methodName == 'test_result_too_small':
-			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) # because serverInfo is a small result 
+			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) # because serverInfo is a small result
 
 	def setUp(self):
 		# can self.skipTest(reason) here
 		pass
-		
-	def run(self, result=None):	
-		self.setResponse("json")	
+
+	def run(self, result=None):
+		self.setResponse("json")
 		super(OTPVersion, self).run(result)
-	
+
 	def test_version(self):
 		if not self.check_param('major') or not self.check_param('minor'): self.skipTest("suppress")
-		
+
 		d = json.loads(self.otp_response)
-				
+
 		t = int(self.param['major']) == d['serverVersion']['major'] and int(self.param['minor']) ==  d['serverVersion']['minor']
-		
+
 		self.assertTrue(t, msg="OTP version mismatch - {0} != {1}".format("%d.%d" % (int(self.param['major']), int(self.param['minor'])), "%d.%d" % (d['serverVersion']['major'], d['serverVersion']['minor'])))
-			
-			
+
+
 class USFGeocoder(OTPTest):
 	"""
 	Test the OTP Geocoder service returns correct coordinates
 
 	@TODO org.otp.geocoder.ws.geocoderserver missing from 1.0.x
 	"""
-	
-	def __init__(self, methodName='runTest', param=None):		
+
+	def __init__(self, methodName='runTest', param=None):
 		self.param = param
 		self.url = "/otp-geocoder/geocode?"
 		super(USFGeocoder, self).__init__(methodName, param)
 		if methodName == 'test_result_too_small':
-			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) 
+			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small))
 
 	def run(self, result=None):
 		self.setResponse("json")
+
+                self.url += self.url_params(self.param)
+
 		super(USFGeocoder, self).run(result)
-						
-	def test_count(self):		
-		d = json.loads(self.otp_response)
-		self.assertGreaterEqual(d['count'], 1, msg="{0} returned no geocode results".format(self.url))		
-	
+
+	def test_count(self):
+		try:
+			d = json.loads(self.otp_response)
+			self.assertGreaterEqual(d['count'], 1, msg="{0} returned no geocode results".format(self.url))
+		except:
+			logging.debug(self.otp_response)
+			self.fail("No JSON object returned - %s" % self.url)
+
 	def test_name(self):
 		if not self.check_param('address'): self.skipTest('suppress')
-		
-		d = json.loads(self.otp_response)
-		for res in d['results']:
-			self.assertEqual(res['description'], self.param['address'], msg="{0} returned an address and not a USF building name".format(self.url))
-		
+
+		try:
+			d = json.loads(self.otp_response)
+			for res in d['results']:	
+				self.assertEqual(res['description'], self.param['address'], msg="{0} returned an address and not a USF building name".format(self.url))
+		except:
+			logging.debug(self.otp_response)	
+			self.fail("No JSON object returned - %s" % self.url)
+
 	def test_no_error(self):
-		d = json.loads(self.otp_response)
-		self.assertEqual(d['error'], None, msg="{0} returned an error {1}".format(self.url, d['error']))
-		
+		try:
+			d = json.loads(self.otp_response)
+			self.assertEqual(d['error'], None, msg="{0} returned an error {1}".format(self.url, d['error']))
+		except:
+			logging.debug(self.otp_response)
+			self.fail("No JSON object returned - %s" % self.url)
+
 	def test_expect_location(self):
 		if not self.check_param('location'): self.skipTest('suppress')
 
+		failmsg = "{0} returned an unexpected location ({1}) - params:%s" % json.dumps(self.param)
+		
 		loc = self.param['location'].split(',')
 		d = json.loads(self.otp_response)
 		for res in d['results']:
-			t = (res['lat'] == loc[0] and res['lng'] == loc[1])
-			self.assertTrue(t, msg="{0} returned an unexpected location".format(self.url))
+			# only check my exact address in case another was returned also
+			if res['description'] <> self.param['address']: continue
 
-			
+			t = (str(res['lat']) == loc[0] and str(res['lng']) == loc[1])
+			self.assertTrue(t, msg=failmsg.format(self.url, "%s,%s" % (res['lat'],res['lng'])))
+
+
 class USFGraphMetaData(OTPTest):
 	""" Checks /otp/routers/default/metadata """
 
-	def __init__(self, methodName='runTest', param=None):		
+	def __init__(self, methodName='runTest', param=None):
 		self.param = param
 		self.url = "routers/default/metadata"
-		super(USFGraphMetaData, self).__init__(methodName, param)		
+		super(USFGraphMetaData, self).__init__(methodName, param)
 		if methodName == 'test_result_too_small':
-			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) # because serverInfo is a small result 
+			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) # because serverInfo is a small result
 
 	def run(self, result=None):
 		self.setResponse("json")
 		super(USFGraphMetaData, self).run(result)
-						
+
 	def test_transit_modes(self):
 		if not self.check_param('modes'): self.skipTest('suppress')
-		
+
 		d = json.loads(self.otp_response)
 		self.assertTrue(self.param['modes'] in d['transitModes'], msg="Transit mode not found in metadata")
-		
+
 	def test_bounds(self):
 		""" test lowerLeft and upperRight against 'coords' """
 
 		if not self.check_param('coords'): self.skipTest('suppress')
-		
+
 		error = 0.2
 		high = [float(self.param['coords'][0]) * (1 + error)]
 		low = [float(self.param['coords'][0]) * (1 - error)]
-		
+
 		high[1] = float(self.param['coords'][1]) * (1 + error)
 		low[1] = float(self.param['coords'][1]) * (1 - error)
-		
+
 		d = json.loads(self.otp_response)
 		t = (row['lowerLeftLatitude'] >= low[0] and row['upperRightLatitude'] <= high[0])
 		t = t and (row['lowerLeftLongitude'] >= low[1] and row['upperRightLongitude'] <= high[1])
-			
+
 		self.assertTrue(t, msg="Graph bounds not within coordinate range")
-				
+
 
 class USFRouters(OTPTest):
 	""" Checks /otp/routers/default """
 
-	def __init__(self, methodName='runTest', param=None):		
+	def __init__(self, methodName='runTest', param=None):
 		self.param = param
 		self.url = "routers/default"
-		super(USFRouters, self).__init__(methodName, param)		
+		super(USFRouters, self).__init__(methodName, param)
 		if methodName == 'test_result_too_small':
-			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small)) 
+			setattr(self, 'test_result_too_small', unittest.case.expectedFailure(self.test_result_too_small))
 
 	def run(self, result=None):
 		self.setResponse("json")
@@ -554,188 +578,188 @@ class USFPlanner(OTPTest):
 
 	def test_invalid_modes(self):
 		""" if any mode is present in a leg from invalid_modes, this test fails """
-		
+
 		if not self.check_param('invalid_modes'): self.skipTest('suppress')
 
 		all_modes = re.findall('<leg mode="(.*?)" route', self.otp_response)
 		bad = list(set(all_modes) & set(self.param['invalid_modes'])) # intersection
-		
+
 		self.assertEqual(len(bad), 0, msg="Invalid modes ({0}) found in itinerary.".format(', '.join(bad)))
-		
+
 	def test_mode_exists(self):
 		""" Ensure 'mode' param exists in legs """
-		
+
 		if not self.check_param('mode'): self.skipTest('suppress')
 
 		all_modes = re.findall('<leg mode="(.*?)" route', self.otp_response)
 		bad = list(set(all_modes) & set(self.param['mode'])) # intersection
-		
+
 		self.assertNotEqual(len(bad), 0, msg="Mode ({0}) NOT found in ({1}) itinerary.".format(self.param['mode'], ','.join(all_modes)))
-		
+
 	def test_no_errors(self):
 		""" Ensure no errors were returned """
-		
+
 		regres = re.findall("<error><id>(.*)</id>", self.otp_response)
 		if len(regres) > 0: errnum = regres[0]
 		else: errnum = ''
-		
+
 		self.assertEqual(len(regres), 0, msg="OTP returned error #{0}".format(errnum))
-		
+
 	# BUS CHECK
 	def test_use_preferred_bus_route(self):
 		""" Ensure a given route is chosen """
-		
+
 		if not self.check_param('use_bus_route'): self.skipTest('suppress')
 		if not isinstance(self.param['use_bus_route'], list): self.param['use_bus_route'] = list(self.param['use_bus_route'])
-		
+
 		all_modes = re.findall('<leg mode="BUS" route="(.*)"', self.otp_response)
 		found = list(set(all_modes) & set(self.param['use_bus_route']))
-		
+
 		self.assertGreater(len(found), 0, msg="Route did not use any of the preferred bus routes")
-		
+
 	# @TODO specified 'mode', 'preferredRoutes' and unpreferred
-	
+
 	def test_max_legs(self):
 		""" Ensure # of modes are not excessive (multiple bus/car legs etc) """
-		
+
 		if not self.check_param('max_legs'): self.skipTest('suppress')
-		
+
 		all_modes = re.findall('<leg mode="(.*)" route', self.otp_response)
-		
+
 		# sum each mode and check against max_legs
 		for m in all_modes:
 			cnt = len(filter(lambda x: x == m, all_modes))
-					
-			self.assertLessEqual(cnt, self.param['max_legs'], msg="Route used too many legs for {0}".format(m))	
-	
+
+			self.assertLessEqual(cnt, self.param['max_legs'], msg="Route used too many legs for {0}".format(m))
+
 	def test_arrive_by(self):
 		# arriveBy=true
 		# time.struct_time(tm_year=2014, tm_mon=7, tm_mday=7, tm_hour=7, tm_min=41, tm_sec=34, tm_wday=0, tm_yday=188, tm_isdst=-1)
-		
+
 		if not self.check_param('arrive_time'): self.skipTest('suppress')
 		if self.param['arriveBy'] == "false": self.skipTest("did not request arrival time")
-		
+
 		all_times = re.findall('<endTime>(.*)<\/endTime>', self.otp_response)
-		
+
 		import time
 		dt = time.strptime(self.param['arrive_time'], "%H:%M:%S")
-		
-		for m in all_times:			
-			mt = time.strptime(m[:-6], "%Y-%m-%dT%H:%M:%S") # XXX timezone 
+
+		for m in all_times:
+			mt = time.strptime(m[:-6], "%Y-%m-%dT%H:%M:%S") # XXX timezone
 			t = (mt["tm_hour"] == dt["tm_hour"]) and (mt["tm_min"] == dt["tm_min"]) and (mt["tm_sec"] == dt["tm_sec"])
 			self.assertTrue(t, msg="{0} did not arrive at specified time: {1} != {2}".format(self.url, self.param['arrive_time'], m))
-				
+
 	def test_depart_at(self):
 		# time, date, arriveBy=false 2014-07-07T07:41:34-04:00
 		# time.struct_time(tm_year=2014, tm_mon=7, tm_mday=7, tm_hour=7, tm_min=41, tm_sec=34, tm_wday=0, tm_yday=188, tm_isdst=-1)
 		if not self.check_param('depart_time'): self.skipTest('suppress')
 		if self.param['arriveBy'] <> "false": self.skipTest("did not request departure time")
-		
+
 		all_times = re.findall('<startTime>(.*)<\/startTime>', self.otp_response)
-		
+
 		import time
 		dt = time.strptime(self.param['depart_time'], "%H:%M:%S")
-		
-		for m in all_times:			
-			mt = time.strptime(m[:-6], "%Y-%m-%dT%H:%M:%S") # XXX timezone 
+
+		for m in all_times:
+			mt = time.strptime(m[:-6], "%Y-%m-%dT%H:%M:%S") # XXX timezone
 			t = (mt["tm_hour"] == dt["tm_hour"]) and (mt["tm_min"] == dt["tm_min"]) and (mt["tm_sec"] == dt["tm_sec"])
 			self.assertTrue(t, msg="{0} did not start at specified time: {1} != {2}".format(self.url, self.param['depart_time'], m))
-		
+
 	def test_max_walk(self):
 		""" Ensure maxWalkDistance is respected for route """
-		
+
 		if not self.check_param('max_walk'): self.skipTest('suppress')
-		
+
 		all_walk = re.findall('<walkDistance>(.*?)<\/walkDistance>', self.otp_response)
-				
-		for m in all_walk:		
+
+		for m in all_walk:
 			self.assertLess(m, self.param['max_walk'], msg="{0} exceeded max_walk distance: {1} < {2}".format(self.url, self.param['max_walk'], m))
-		
+
 '''
 @TODO optimize
 @TODO bike triangle routing
 @TODO wheelchair
-'''		
+'''
 
 class USFBikeRental(OTPTest):
-	""" Perform various tests on bike_rental API """	
-	
+	""" Perform various tests on bike_rental API """
+
 	def __init__(self, methodName='runTest', param=None):
 		self.url = "routers/default/bike_rental?"
 		self.param = param
 		super(USFBikeRental, self).__init__(methodName, param)
 
-	def run(self, result=None):		
-		self.setResponse("json")		
+	def run(self, result=None):
+		self.setResponse("json")
 		super(USFBikeRental, self).run(result)
-		
-	def test_not_empty(self):		
+
+	def test_not_empty(self):
 		d = json.loads(self.otp_response)
 		self.assertGreater(len(d["stations"]), 0, msg="{0} - stations is empty".format(self.url))
 
 	def test_bikes_available(self):
 		d = json.loads(self.otp_response)
 		for row in d["stations"]:
-			self.assertGreater(len(row['bikes']), 0, msg="{0} - has no bikes available".format(row['name']))
+			self.assertGreater(row['bikesAvailable'], 0, msg="{0} - has no bikes available".format(row['name']))
 			break # at least one has to pass XXX
-			
+
 	def test_stations_coordinates(self):
 		if not self.check_param('station_coordinates'): self.skipTest('suppress')
-		
+
 		error = 0.2
 		high = [float(self.param['station_coordinates'][0]) * (1 + error)]
 		low = [float(self.param['station_coordinates'][0]) * (1 - error)]
-		
+
 		high[1] = float(self.param['station_coordinates'][1]) * (1 + error)
 		low[1] = float(self.param['station_coordinates'][1]) * (1 - error)
-		
+
 		d = json.loads(self.otp_response)
 		for row in d["stations"]:
 			t = (row['lat'] >= low[0] and row['lat'] <= high[0])
 			t = t and (row['lng'] >= low[1] and row['lng'] <= high[1])
-			
+
 			self.assertTrue(t, msg="{0} station not within coordinate range".format(row['name']))
-		
+
 
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
 def find_tests(path, tests):
 	files=os.listdir(path)
 	for f in files:
-		if os.path.isdir(path + "/" + f) and f[0] != '.':			
+		if os.path.isdir(path + "/" + f) and f[0] != '.':
 			tmp = find_tests(path + "/" + f, [])
-			if len(tmp) > 0: tests += tmp 
+			if len(tmp) > 0: tests += tmp
 			continue
-			
+
 		if f.lower().endswith('.csv'):
 			cls = path.split('/')[-1]
-			
+
 			obj = {'file': path + "/" + f, "lines":[], 'name': cls}
-						
+
 			if len(cls) > 0:
 				obj['cls'] = find_test_class(cls)
-				if obj['cls'] is not None: 
+				if obj['cls'] is not None:
 					tests.append(obj)
 					break
-				
+
 	return tests
 
 def find_test_class(cls):
 	for m in globals(): # XXX tests namespace
 		if hasattr(globals()[m], cls) or m.lower() == cls.lower():
-			return globals()[m] 						
+			return globals()[m]
 	return None
-	
+
 def load_csv_by_url(url, args="", parser=None):
 	"Returns a list of suites from the specified spreadsheet URL."
-	
+
 	# Do OAuth2 stuff to create credentials object
 	from oauth2client.file import Storage
 	from oauth2client.client import flow_from_clientsecrets
-	from oauth2client.tools import run_flow, argparser 
-	
+	from oauth2client.tools import run_flow, argparser
+
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, parents=[argparser, parser], conflict_handler='resolve')
 	flags = parser.parse_args(args)
-	
+
 	storage = Storage("creds.dat")
 	credentials = storage.get()
 	if credentials is None or credentials.invalid:
