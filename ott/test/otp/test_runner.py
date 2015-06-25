@@ -449,9 +449,11 @@ class USFGeocoder(OTPTest):
             self.fail("No JSON object returned - %s" % self.url)
             return
 
+        t = False
         for res in d['results']:
-            self.assertEqual(res['description'], urllib2.unquote(self.param['address']),
-                msg="{0} returned location did not match ({1} != {2})".format(self.url, res['description'], urllib2.unquote(self.param['address'])))
+            if res['description'] == urllib2.unquote(self.param['address']): t = True
+
+        self.assertTrue(t, msg="{0} returned location(s) did not match ({1} != {2})".format(self.url, self.param['address'], ', '.join([urllib2.unquote(x['description']) for x in d['results']])))
 
     def test_no_error(self):
         try:
@@ -481,7 +483,7 @@ class USFGeocoder(OTPTest):
             logging.info("test_expect_location: %s" % str(ex))
             logging.info("test_expect_location: %s" % self.param)
 
-            self.fail(str(ex))
+            self.fail("%s url=%s" % (str(ex), self.url))
 
 
 class USFGraphMetaData(OTPTest):
