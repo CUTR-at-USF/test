@@ -87,7 +87,7 @@ dir = os.path.dirname(ts).split('/')[-1]
 	<br><br>
 	
 	% for test in test_suites[ts]:
-		% if test <> 'param' and not isinstance(test_suites[ts][test], int):
+		% if test <> 'param' and isinstance(test_suites[ts][test], dict):
 			<div class="${test}">
 			<h3>${test}</h3>
 			% for res in test_suites[ts][test]:		
