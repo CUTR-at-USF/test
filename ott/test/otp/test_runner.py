@@ -600,6 +600,17 @@ class USFPlanner(OTPTest):
         date = date.strftime("%Y-%m-%d")
         return date
 
+    @staticmethod
+    def valid_url_parameters(params):
+
+	valid = ['fromPlace', 'toPlace', 'mode', 'maxWalkDistance', 'arriveBy', 'duration', 'time', 'showIntermediateStops']
+	d = {}
+	for x in params:
+		if x not in valid: continue
+		d[x] = params[x]
+
+	return d
+
     def test_expected_output(self):
         if not self.check_param('expected_output'): self.skipTest('suppress')
 
@@ -961,6 +972,10 @@ if __name__ == "__main__":
     parser.add_argument('--skip', dest='skip_class', help="Comma-delimited list of test name(s) to skip")
     parser.add_argument('--only', dest='only_class', help="Comma-delimited list of test name(s) to use exclusively")
 
+    parser.add_argument('--add', dest='add_url', help="Add URL parameters to required CSV file or remote sheet")
+    parser.add_argument('--add-class', dest='add_class', help="Specify the test class that should be used")
+    parser.add_argument('--add-sheet', dest='add_sheet', help="The filename of the CSV file, or the full Google Sheet URL")
+
     parser.set_defaults(
         otp_url=envvar('OTP_URL', 'http://localhost:8080/otp/'),
         map_url=envvar('OTP_MAP_URL', 'http://localhost:8080/index.html'),
@@ -996,6 +1011,16 @@ if __name__ == "__main__":
     # set base parameters for tests from environment
     p = {'otp_url': args.otp_url}
     if args.date is not None: p['date'] = args.date
+
+    # Add Parameters to file from URL
+    if args.add_url is not None:
+	import urlparse
+	url = urlparse.urlparse(args.add_url)
+	p = urlparse.parse_qs(url.query)
+
+	print USFPlanner.valid_url_parameters(p)
+
+    	sys.exit(0)
 
     print "Loading test data...",
 
