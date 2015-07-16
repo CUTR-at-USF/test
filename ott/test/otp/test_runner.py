@@ -27,6 +27,7 @@ import argparse
 import unittest
 import json
 
+import gdata.spreadsheet
 import gdata.spreadsheets.client
 import gdata.gauth
 
@@ -868,78 +869,110 @@ def find_test_class(cls):
     return None
 
 
-def load_csv_by_url(url, args="", parser=None):
-    "Returns a list of suites from the specified spreadsheet URL."
+from oauth2client.file import Storage
+from oauth2client.client import flow_from_clientsecrets
+from oauth2client.tools import run_flow, argparser
+import httplib2
 
-    # Do OAuth2 stuff to create credentials object
-    from oauth2client.file import Storage
-    from oauth2client.client import flow_from_clientsecrets
-    from oauth2client.tools import run_flow, argparser
+class csv_remote(object):
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
-                                     parents=[argparser, parser], conflict_handler='resolve')
-    flags = parser.parse_args(args)
+	def __init__(self, args="", parser=None):
 
-    storage = Storage("creds.dat")
-    credentials = storage.get()
-    if credentials is None or credentials.invalid:
-        credentials = run_flow(
-            flow_from_clientsecrets("client_secrets.json", scope=["https://spreadsheets.google.com/feeds"]), storage,
-            flags)
-    elif credentials.access_token_expired:
-        import httplib2
+		# parse out our cmd-line params
+		parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+                	parents=[argparser, parser], conflict_handler='resolve')
+		flags = parser.parse_args(args)
 
-        credentials.refresh(httplib2.Http())
-        print "Refreshed"
+		# begin oauth flow
+		storage = Storage("creds.dat")
+		credentials = storage.get()
+		if credentials is None or credentials.invalid:
+			credentials = run_flow(
+		        flow_from_clientsecrets("client_secrets.json", scope=["https://spreadsheets.google.com/feeds"]), storage,
+		        flags)
+		elif credentials.access_token_expired:
+			credentials.refresh(httplib2.Http())
+			print "Refreshed"
 
-    token = gdata.gauth.OAuth2TokenFromCredentials(credentials)
-    gclient = gdata.spreadsheets.client
-    g = gclient.SpreadsheetsClient()
+		self.token = gdata.gauth.OAuth2TokenFromCredentials(credentials)
+		self.gclient = gdata.spreadsheets.client
+		self.g = self.gclient.SpreadsheetsClient()
 
-    sheets = g.get_worksheets(url, auth_token=token)
-    cnt = 0
-    data = []
+	def load_by_url(self, url):
+		"Returns a list of suites from the specified spreadsheet URL."
 
-    for sheet in enumerate(sheets.entry):
-        id = sheet[1].get_worksheet_id()
+		sheets = self.g.get_worksheets(url, auth_token=self.token)
+		cnt = 0
+		data = []
+		self.sheets = {}
+		for sheet in enumerate(sheets.entry):
+			id = sheet[1].get_worksheet_id()
 
-        logging.info("Sheet %s (%s)" % (sheet[1].title.text, id))
+			logging.info("Sheet %s (%s)" % (sheet[1].title.text, id))
 
-        cls = find_test_class(sheet[1].title.text)
-        if cls is None: continue
+			cls = find_test_class(sheet[1].title.text)
+			if cls is None: continue
 
-        tmp = {"data": [], 'cls': cls, 'file': sheet[1].title.text, 'name': sheet[1].title.text}
-        cnt = cnt + 1
+			self.sheets[sheet[1].title.text] = id
+			tmp = {"worksheet_id":id, "data": [], 'cls': cls, 'file': sheet[1].title.text, 'name': sheet[1].title.text}
+			cnt = cnt + 1
 
-        w = g.get_worksheet(url, id, auth_token=token)
-        if w.row_count.text <= 0 or w.col_count.text <= 0: continue
+			w = self.g.get_worksheet(url, id, auth_token=self.token)
+			if w.row_count.text <= 0 or w.col_count.text <= 0: continue
 
-        # have to get column names via get_cells because the listfeed auto-changes names
-        fn = []
-        col = []
-        feed = g.get_cells(url, id, auth_token=token)
-        for row in enumerate(feed.entry):
-            if row[1].cell.text == "-": row[1].cell.text = ""  # workaround for get_cells() skipping blank cells
-            if row[1].cell.row == "1":
-                fn.append(row[1].cell.text)
-            else:
-                col.append(row[1].cell.text)
+			# have to get column names via get_cells because the listfeed auto-changes names
+			fn = []
+			col = []
+		        feed = self.g.get_cells(url, id, auth_token=self.token)
+		        for row in enumerate(feed.entry):
+	        		if row[1].cell.text == "-": row[1].cell.text = ""  # workaround for get_cells() skipping blank cells
+			        if row[1].cell.row == "1":
+				        fn.append(row[1].cell.text)
+		        	else:
+	        	        	col.append(row[1].cell.text)
+	
+			        if len(col) == len(fn):
+        			        tmp["data"].append(dict(zip(fn, col)))
+                			col = []
 
-            if len(col) == len(fn):
-                tmp["data"].append(dict(zip(fn, col)))
-                col = []
+		        data.append(tmp)
 
-        """
-		feed = g.GetListFeed(url, id, auth_token=token)
-		for row in enumerate(feed.entry):
-			tmp["data"].append( dict(zip(fn, row[1].to_dict().values())) )
-		"""
+		print "%d sheets loaded" % cnt
 
-        data.append(tmp)
+		return data
 
-    print "%d sheets loaded" % cnt
+	def append_row(self, url, sheet_id, params):
 
-    return data
+		if 'description' not in params: params['description'] = "ADDED BY TEST_RUNNER"
+
+		cell_query = gdata.spreadsheets.client.CellQuery( return_empty=False )
+		cells = self.g.GetCells(url, sheet_id, q=cell_query, auth_token=self.token) #, converter=None, desired_class=None)
+		row_id = 1
+		# add new cells for each in header row
+		headers = []
+		ent = cells.entry[0].cell
+		for c in cells.entry:
+			c = c.cell
+			if c.row > row_id: row_id = int(c.row)
+			if int(c.row) == 1: 
+				headers.append( c.input_value )
+
+		# add a new row
+
+		entry = gdata.spreadsheets.data.ListEntry()
+		for col in xrange(0, len(headers)):
+			
+			if headers[col] in params: val = params[headers[col]]
+			else: val = "-"
+
+			if type(val) == list and len(val) == 1: val = val[0]
+
+			name = headers[col].lower().replace('_', '').replace(' ', '')
+			entry.set_value(name, str(val))
+
+		#print str(entry)
+		self.g.add_list_entry(entry, url, sheet_id, auth_token=self.token)
+
 
 # MAIN CODE
 
@@ -979,7 +1012,7 @@ if __name__ == "__main__":
     parser.set_defaults(
         otp_url=envvar('OTP_URL', 'http://localhost:8080/otp/'),
         map_url=envvar('OTP_MAP_URL', 'http://localhost:8080/index.html'),
-        template_path=envvar('OTP_TEMPLATE', './templates/good_bad.html'),
+        template_path=envvar('OTP_TEMPLATE', './templates/simple_template.html'),
         csv_path=envvar('OTP_CSV_DIR', './suites/'),
         report_path=envvar('OTP_REPORT', './report/otp_report.html'),
         url="1f_CTDgQfey5mY1eMO03D7UZ8855D-mxHsfYfsA3c4Zw",  # Google doc key to USF file
@@ -1012,21 +1045,12 @@ if __name__ == "__main__":
     p = {'otp_url': args.otp_url}
     if args.date is not None: p['date'] = args.date
 
-    # Add Parameters to file from URL
-    if args.add_url is not None:
-	import urlparse
-	url = urlparse.urlparse(args.add_url)
-	p = urlparse.parse_qs(url.query)
-
-	print USFPlanner.valid_url_parameters(p)
-
-    	sys.exit(0)
-
     print "Loading test data...",
 
     # Load test parameters via google sheet
-    if args.remote is True or args.url <> parser.get_default("url"):
-        test_suites = load_csv_by_url(args.url, sys.argv[1:], parser)
+    if args.remote is True or args.url <> parser.get_default("url"):	
+	r = csv_remote(sys.argv[1:], parser)
+        test_suites = r.load_by_url(args.url)
     else:
         # Load tests from CSV files on disk
         test_suites = find_tests(args.csv_path, [])
@@ -1038,6 +1062,30 @@ if __name__ == "__main__":
             s["data"] = []
             for row in reader: s["data"].append(row)
         print "Done"
+
+    # Add Parameters to file from URL
+    if args.add_url is not None:
+	import urlparse
+	purl = urlparse.urlparse(args.add_url)
+	p = urlparse.parse_qs(purl.query)
+
+	cls = find_test_class(args.add_class)
+	if cls is not None and "valid_url_parameters" in dir(cls):	
+		params = cls.valid_url_parameters(p)
+
+		# if remote
+		#ret = csv_remote(sys.argv[1:], parser)
+		#ret.load_by_url(args.url)
+		id = r.sheets[args.add_class]
+		#id = 36847144
+		r.append_row(args.url, id, params)
+		# else append to file
+
+	else:
+		print "Not implemented for %s" % args.add_class
+
+    	sys.exit(0)
+
 
     for key, s in enumerate(test_suites):
         i = 0
