@@ -604,7 +604,7 @@ class USFPlanner(OTPTest):
     @staticmethod
     def valid_url_parameters(params):
 
-	valid = ['fromPlace', 'toPlace', 'mode', 'maxWalkDistance', 'arriveBy', 'duration', 'time', 'showIntermediateStops']
+	valid = ['otp_url', 'fromPlace', 'toPlace', 'mode', 'maxWalkDistance', 'arriveBy', 'duration', 'time', 'showIntermediateStops']
 	d = {}
 	for x in params:
 		if x not in valid: continue
@@ -838,6 +838,44 @@ class USFBikeRental(OTPTest):
 
             self.assertTrue(t, msg="{0} station not within coordinate range".format(row['name']))
 
+# XXX abstract local csv loading into class too
+
+def add_test_row(path, cls, params):
+	p = "%s%s/*.csv" % (path, cls.__name__)
+	import glob
+	files = glob.glob(p)
+	if len(files) <= 0: 
+		print "No files found to add to."
+		return
+
+	file = files[0]
+	if os.path.exists(file):
+		# read current csv lines
+		fp = open(file, 'r')
+            	reader = csv.DictReader(fp)
+            	fn = reader.fieldnames
+		data = []
+		for row in reader: data.append(row)
+
+		for col in params.keys():
+			# add column to header
+			if col not in fn: fn.append(col)
+			# convert literals and everything to strings
+			val = params[col]
+			if type(val) == list: val = val[0]
+			params[col] = str(val)
+			
+		data.append(params)
+
+		fp = open(file, "w+")
+		w = csv.DictWriter(fp, fieldnames=fn)
+		w.writeheader()
+		for row in data:
+			for col in fn:
+				if col not in row: row[col] = ""
+			w.writerow(row)
+	else:
+		print "No local CSV found for class '%s'" % cls
 
 # DISCOVER/LOAD PARAMS FROM CSV, spawn a new suite and generate a new report
 def find_tests(path, tests):
@@ -1067,19 +1105,19 @@ if __name__ == "__main__":
     if args.add_url is not None:
 	import urlparse
 	purl = urlparse.urlparse(args.add_url)
-	p = urlparse.parse_qs(purl.query)
-
+	p.update(urlparse.parse_qs(purl.query))
+	
 	cls = find_test_class(args.add_class)
 	if cls is not None and "valid_url_parameters" in dir(cls):	
 		params = cls.valid_url_parameters(p)
 
 		# if remote
-		#ret = csv_remote(sys.argv[1:], parser)
-		#ret.load_by_url(args.url)
-		id = r.sheets[args.add_class]
-		#id = 36847144
-		r.append_row(args.url, id, params)
+		if args.remote is True or args.url <> parser.get_default("url"):
+			id = r.sheets[args.add_class]
+			r.append_row(args.url, id, params)
 		# else append to file
+		else:
+			add_test_row(args.csv_path, cls, params)
 
 	else:
 		print "Not implemented for %s" % args.add_class
