@@ -19,6 +19,7 @@ import traceback
 import csv
 import re
 import socket
+import urllib
 import urllib2
 from mako.template import Template
 
@@ -615,7 +616,7 @@ class USFPlanner(OTPTest):
     def test_expected_output(self):
         if not self.check_param('expected_output'): self.skipTest('suppress')
 
-        regres = re.search(self.param['expected_output'], self.otp_response)
+        regres = re.search(urllib.unquote(self.param['expected_output']), self.otp_response)
 
         self.assertNotEqual(regres, None,
                             msg="Couldn't find {0} in otp response.".format(self.param['expected_output']))
@@ -623,7 +624,7 @@ class USFPlanner(OTPTest):
     def test_not_expected_output(self):
         if not self.check_param('not_expected'): self.skipTest('suppress')
 
-        regres = re.search(self.param['not_expected'], self.otp_response)
+        regres = re.search(urllib.unquote(self.param['not_expected']), self.otp_response)
 
         self.assertEqual(regres, None, msg="Output was found in otp response.")
 
