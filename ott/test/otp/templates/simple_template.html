@@ -90,17 +90,17 @@ ${dir} - ${test_suites[cls]['run']}/${test_suites[cls]['total']} test cases comp
     <br>
 
     <br>
-	% for test in test_suites[cls]['failures']:
+	% for test in sorted(test_suites[cls]['failures'].keys()):
 
 		<div>
-             <span class=red>Fail</span>:
+	             <span class=red>Fail</span>:
 			 ${test} -> <code>${test_suites[cls]['failures'][test]}</code><br>
 		</div>
 
 	% endfor
 
     <br>
-    % for test in test_suites[cls]['pass']:
+    % for test in sorted(test_suites[cls]['pass'].keys()):
 
         <div>
                 % for res in test_suites[cls]['pass'][test]:
@@ -112,7 +112,7 @@ ${dir} - ${test_suites[cls]['run']}/${test_suites[cls]['total']} test cases comp
     % endfor
 
     <br>
-    % for test in test_suites[cls]['errors']:
+    % for test in sorted(test_suites[cls]['errors'].keys()):
         <div>
             <span class=red>Error</span>:
             ${test} -> <code>${test_suites[cls]['errors'][test]}</code><br>
