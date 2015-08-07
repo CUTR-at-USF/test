@@ -17,7 +17,7 @@ Note: To add a new case the right to edit the spreadsheet is necessary (Link abo
 $ python test_runner.py --add "http://mobullity.forest.usf.edu/index.html?module=planner&fromPlace=28.06914026483356%2C-82.40278244018555&toPlace=28.069272801561006%2C-82.40248203277588&time=6%3A09pm&date=07-23-2015&mode=TRANSIT%2CWALK&maxWalkDistance=1609.34&wheelchair=false&arriveBy=false&bannedRoutes=undefined&showIntermediateStops=true&itinIndex=0" --add-class=USFPlanner -R
 ```
 
-The script ```test_runner.py``` need to be run with the following attribut:
+The script ```test_runner.py``` need to be run with the following attribute:
 
 ```
 --add ""
@@ -27,8 +27,15 @@ The itinerary link retrieved from the planner need to be inside of the quote.
 To copy the itinerary link from the planner, first plan your trip then in the bottom of the detail of this trip there should be a link named "Link to Itinerary", you only need to copy the url of this link.
 
 ```
---add-class=USFPlanner -R
+--add-class=USFPlanner
 ```
+This attribute specify which class the test will be added to. For now test can only be added to the class "USFPlanner".
+
+```
+-R 
+```
+This attributes makes test_runner load the CSV data remotely (from google sheets).  Without this, it will load local files from "suites/".
+
 ## Populating the various fields
 
 Note: When the spreadsheet gets large, it may be confusing because some rows will reference tests but the column will still exist for other rows ... the current way to deal with this is just to add a single "-" in the column to "suppress" that test.
@@ -45,7 +52,7 @@ value: a string of character
 
 Note: this field is automatically filled up but it needs to be modify to something specific.
 
-**Coordonate for the path**
+**Coordinate for the path**
 
 Start and end location of the trip to test.
 
@@ -54,28 +61,29 @@ value: two float separated by a coma (Latitude, Longitude)
 
 **Check mode of transit**
 
-<!---TODO-->
+This is currently both the OTP parameter and a JSON list of acceptable modes to be used for a given trip.
 
 column: mode <br/>
 value: name of the modes of transit comma-delimited 
 
 **Check max walk distance**
 
-<!---TODO-->
+An OTP Parameter that triggers an alert to be returned if a route exceeds this distance.
 
 column: maxWalkDistance <br/>
-value: float
+value: float (meters)
 
 **Check arriveBY**
 
-<!---TODO-->
+OTP parameter that influences the routing decisions to try and accommodate arriving at a destination at a given time:
+
 
 column: arriveBy <br/>
-value: boolean
+value: boolean or XX:XX YM (with X a number and Y A or P)
 
 **Check Intermeediate stops**
 
-<!---TODO-->
+This is an OTP parameter that adjusts the output of the trip planner - see http://dev.opentripplanner.org/apidoc/0.15.0/resource_PlannerResource.html
 
 column: showIntermediateStops <br/>
 value: boolean
@@ -88,13 +96,19 @@ column: time <br/>
 value: XX:XX YM (with X a number and Y A or P)
 
 Note: this column will be automatically field by the the --add option but will add the time when the test is added which might not correspond to the value wanted in this column.
+Note: The date column OTP parameter may be more influential in the routing process than time -- since some buses don't run on the weekend.
 
 **otp_url**
 
-<!---TODO-->
+This is to set the base URL to the OTP installation being tested. It can also be set from the command-line, or environment variables and these will override whatever is set in the CSV file.
 
+column: otp_url <br/>
+value: an url
 
 ###The following are automatically supressed (filled with '-') by the --add command:
+Note:Technically all tests (specific) are automatically suppressed when using --add-url ... only the tests which don't require any parameter are not such as :
+test_no_errors, test_result_not_null, test_result_too_small
+
 
 **Check for invalid modes:**
 
