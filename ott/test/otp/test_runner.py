@@ -685,11 +685,11 @@ class USFPlanner(OTPTest):
     def test_mode_exists(self):
         """ Ensure 'mode' param exists in legs """
 
-        if not self.check_param('mode'): self.skipTest('suppress')
-        if type(self.param['mode']) <> list:
-            l = [self.param['mode']]
+        if not self.check_param('mode_exists'): self.skipTest('suppress')
+        if type(self.param['mode_exists']) <> list:
+            l = [self.param['mode_exists']]
         else:
-            l = self.param['mode']
+            l = self.param['mode_exists']
 
         all_modes = re.findall('<leg mode="(.*?)" route', self.otp_response)
         bad = list(set(all_modes) & set(l))  # intersection
