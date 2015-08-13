@@ -51,6 +51,7 @@ column: desciption <br/>
 value: a string of character
 
 Note: this field is automatically filled up but it needs to be modify to something specific.
+Note: If the test added is related to an issue present on the github please reference it like that: "(#X)"
 
 **Coordinate for the path**
 
@@ -89,8 +90,6 @@ column: showIntermediateStops <br/>
 value: boolean
 
 **Time**
-
-<!---TODO-->
 
 column: time <br/>
 value: XX:XX YM (with X a number and Y A or P)
