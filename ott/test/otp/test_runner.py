@@ -19,6 +19,7 @@ import traceback
 import csv
 import re
 import socket
+import urllib
 import urllib2
 from mako.template import Template
 
@@ -615,7 +616,7 @@ class USFPlanner(OTPTest):
     def test_expected_output(self):
         if not self.check_param('expected_output'): self.skipTest('suppress')
 
-        regres = re.search(self.param['expected_output'], self.otp_response)
+        regres = re.search(urllib.unquote(self.param['expected_output']), self.otp_response, re.IGNORECASE)
 
         self.assertNotEqual(regres, None,
                             msg="Couldn't find {0} in otp response.".format(self.param['expected_output']))
@@ -623,7 +624,7 @@ class USFPlanner(OTPTest):
     def test_not_expected_output(self):
         if not self.check_param('not_expected'): self.skipTest('suppress')
 
-        regres = re.search(self.param['not_expected'], self.otp_response)
+        regres = re.search(urllib.unquote(self.param['not_expected']), self.otp_response, re.IGNORECASE)
 
         self.assertEqual(regres, None, msg="Output was found in otp response.")
 
@@ -684,11 +685,11 @@ class USFPlanner(OTPTest):
     def test_mode_exists(self):
         """ Ensure 'mode' param exists in legs """
 
-        if not self.check_param('mode'): self.skipTest('suppress')
-        if type(self.param['mode']) <> list:
-            l = [self.param['mode']]
+        if not self.check_param('mode_exists'): self.skipTest('suppress')
+        if type(self.param['mode_exists']) <> list:
+            l = [self.param['mode_exists']]
         else:
-            l = self.param['mode']
+            l = self.param['mode_exists']
 
         all_modes = re.findall('<leg mode="(.*?)" route', self.otp_response)
         bad = list(set(all_modes) & set(l))  # intersection
@@ -970,7 +971,8 @@ class csv_remote(object):
 	        	        	col.append(row[1].cell.text)
 	
 			        if len(col) == len(fn):
-        			        tmp["data"].append(dict(zip(fn, col)))
+					line = dict(zip(fn, col))
+        			        tmp["data"].append(line)
                 			col = []
 
 		        data.append(tmp)
@@ -1177,74 +1179,79 @@ if __name__ == "__main__":
         if s['file'] not in report_data: report_data[s['file']] = {'run': 0, 'total': 0,
                                                                     'skipped': {}, 'failures': {},
                                                                    'errors': {}, 'pass': {}, 'param': {}}
+        data = {}
+        row = {}
+        row['suite'] = s
+        row['tests'] = []
+        row['stats'] = {'run':0, 'total':0, 'skipped':0, 'failures':0, 'errors':0, 'pass':0}
 
+        # for each line in the CSV files, run the suite and collect the results
         for line in s['lines']:
-            line['suite'].run(line['result'])
 
+            line['suite'].run(line['result'])
             if line['result'].testsRun == 0: continue
 
-            report_data[s['file']]['run'] += line['result'].testsRun
+            # with the result captured and for those tests that actually had tests to run, prepare the data for the template
+
+            row['stats']['run'] += line['result'].testsRun
+
+	    report_data[s['file']]['total'] += line['result'].testsRun
+	    report_data[s['file']]['run'] += line['result'].testsRun
+	    #report_data[s['file']]['total'] -= len(line['result'].skipped)
+	    #report_data[s['file']]['run'] -= len(line['result'].skipped)
 
             desc = "%d (%s)" % (line['csv_line_number'], line['param']['description']) if 'description' in line[
-                'param'] else "%d" % line['csv_line_number']
-
-            report_data[s['file']]['param'] = line['param']
+                   'param'] else "%d" % line['csv_line_number']
 
             f = []
-            for r in line['result'].errors:
-                if not args.debug:
-                    tmp = r[1].strip().split('\n')[-1]  # if not debug, only get last line (the assertionerror)
-                else:
-                    tmp = r[1]
-                report_data[s['file']]['errors']["%s:%s" % (r[0].id().split('.')[-1], desc)] = tmp
-                f.append(r)
 
-            for r in line['result'].failures:
-                if not args.debug:
-                    tmp = r[1].strip().split('\n')[-1]  # if not debug, only get last line (the assertionerror)
-                else:
-                    tmp = r[1]
-                report_data[s['file']]['failures']["%s:%s" % (r[0].id().split('.')[-1], desc)] = tmp
-                f.append(r)
+            # shouldStop, testsRun, unexpectedSuccesses
+            for status in ['errors', 'failures', 'skipped', 'expectedFailures']:
+                for test in getattr(line['result'], status):
+                    # tuple - test class, traceback
 
-            for r in line['result'].skipped:
-                if not args.debug:
-                    tmp = r[1].strip().split('\n')[-1]  # if not debug, only get last line (the assertionerror)
-                else:
-                    tmp = r[1]
-                report_data[s['file']]['skipped']["%s:%s" % (r[0].id().split('.')[-1], desc)] = tmp
-                f.append(r)
+                    name = test[0].id().split('.')[-1]  # get the test name from the full python path (__file__.class.methodName)
+                    # get the data to output - either the full traceback, or the last line (assertionerror)
+                    if not args.debug:
+                        output = test[1].strip().split('\n')[-1]
+                    else:
+                        output = test[1]
 
+		    if type(report_data[s['file']][status]) == dict: 
+			    report_data[s['file']][status]["%s:%s" % (desc, name)] = output
+                    row['tests'].append( {'name':name, 'output':output, 'status':status, 'line_number':line['csv_line_number']} )
+
+            """
             failures += len(line['result'].failures)
 
             # XXX
             for r in line['result'].expectedFailures:
                 report_data[s['file']]['pass']["%s:%s" % (r[0].methodName, line['csv_line_number'])] = {"note":"Expected Failure"}
+            """
 
-            #report_data[s['file']]['run'] -= len(line['result'].expectedFailures)
-            #report_data[s['file']]['total'] -= len(line['result'].expectedFailures)
-
+    	    # build distinct set of tests run for template
             tests = set()
             for r in line['suite']:
                 tests.add(r.methodName)
                 if r.success == False: continue
 
                 # r.__class__.__name__
-                report_data[s['file']]['pass']["%s:%s" % (r.methodName, line['csv_line_number'])] = {"param":r.param}
+                report_data[s['file']]['pass']["%s:%s" % (line['csv_line_number'], r.methodName)] = {"param":r.param}
 
-            report_data[s['file']]['total'] += line['result'].testsRun
-            report_data[s['file']]['run'] -= len(line['result'].skipped)
-            report_data[s['file']]['total'] -= len(line['result'].skipped)
-            report_data[s['file']]['tests'] = tests
+                name = r.methodName
+                output = {'param': r.param}
+                # XXX abstract this to the test class so e.g USFPlanner can output a link to view itinerary
 
+                row['tests'].append( {'name':name, 'output':output, 'status':'pass', 'line_number': line['csv_line_number']} )
+
+        data[s['name']] = row
+
+        report_data[s['file']]['param'] = line['param']
+        report_data[s['file']]['tests'] = tests
 
     print "Done"
 
     # REPORT
-
-    # XXX try to sort tests by csv_line_number
-
-    # XXX unique list of tests run
 
     # XXX show passing test details, stats ... also, hide skipped, failed, errors
 
@@ -1259,7 +1266,7 @@ if __name__ == "__main__":
     report_template = Template(filename=args.template_path)
 
     try:
-        r = report_template.render(test_suites=report_data, all_passed=True if failures <= 0 else False)
+        r = report_template.render(data=data, test_suites=report_data, all_passed=True if failures <= 0 else False)
     except:
         r = exceptions.html_error_template().render()
 
