@@ -1217,7 +1217,7 @@ if __name__ == "__main__":
                     else:
                         output = test[1]
 
-		    if type(report_data[s['file']][status]) == dict: 
+		    if status in report_data[s['file']] and type(report_data[s['file']][status]) == dict: 
 			    report_data[s['file']][status]["%s:%s" % (desc, name)] = output
                     row['tests'].append( {'name':name, 'output':output, 'status':status, 'line_number':line['csv_line_number']} )
 
